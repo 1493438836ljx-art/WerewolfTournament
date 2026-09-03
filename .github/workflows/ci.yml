@@ -11,14 +11,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11
-
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: pnpm
+
+      - name: Install pnpm
+        run: npm install -g pnpm@11
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -37,13 +35,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: pnpm
+      - name: Install pnpm
+        run: npm install -g pnpm@11
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @wt/engine --filter @wt/protocol build
       - name: Simulate random games (5 seeds)
