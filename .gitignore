@@ -9,4 +9,3 @@ data/
 coverage/
 .idea/
 .vscode/
-drizzle/*.sql
