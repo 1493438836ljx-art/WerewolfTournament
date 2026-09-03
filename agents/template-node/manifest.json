@@ -1,0 +1,9 @@
+{
+  "name": "my-agent-ts",
+  "author": "your-name",
+  "language": "typescript",
+  "command": ["node", "main.mjs"],
+  "startup_timeout_ms": 30000,
+  "resources": { "memory_mb": 512, "cpus": 1 },
+  "network": "proxy"
+}

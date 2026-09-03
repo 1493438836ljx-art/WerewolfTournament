@@ -1,0 +1,32 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: wt
+      POSTGRES_PASSWORD: wt_dev_password
+      POSTGRES_DB: werewolf
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wt -d werewolf"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # 正式赛部署（server 需 Linux 宿主以启用 docker 沙箱）：
+  # server:
+  #   build: ./packages/server
+  #   env_file: .env
+  #   ports: ["3000:3000"]
+  #   depends_on: { postgres: { condition: service_healthy } }
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #     - ./agents:/app/agents:ro
+  # web:
+  #   build: ./packages/web
+  #   ports: ["5173:5173"]
+
+volumes:
+  pgdata:

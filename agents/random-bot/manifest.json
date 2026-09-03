@@ -1,0 +1,9 @@
+{
+  "name": "random-bot",
+  "author": "platform",
+  "language": "python",
+  "command": ["python3", "main.py"],
+  "startup_timeout_ms": 15000,
+  "resources": { "memory_mb": 256, "cpus": 0.5 },
+  "network": "none"
+}

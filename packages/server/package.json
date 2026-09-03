@@ -1,0 +1,30 @@
+{
+  "name": "@wt/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx src/db/migrate.ts"
+  },
+  "dependencies": {
+    "@fastify/websocket": "^11.0.0",
+    "@wt/engine": "workspace:*",
+    "@wt/llm": "workspace:*",
+    "@wt/protocol": "workspace:*",
+    "dotenv": "^16.4.0",
+    "drizzle-orm": "^0.44.0",
+    "fastify": "^5.0.0",
+    "pg": "^8.13.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.0",
+    "drizzle-kit": "^0.31.0"
+  }
+}
