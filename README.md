@@ -1,5 +1,7 @@
 # 狼人杀 Sub Agent 锦标赛平台
 
+**English documentation: [README.en.md](README.en.md)**
+
 AI Coding 比赛平台：检验选手的 sub agent 开发能力。选手用任意语言/框架（Claude Code、OpenCode、自研）开发狼人杀玩家 agent，通过 CLI 进程协议（stdin/stdout JSONL）接入平台对局；LLM 裁判主持，规则引擎保证公平可重放。
 
 ## 架构

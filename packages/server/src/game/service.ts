@@ -30,8 +30,10 @@ export class GameService {
     private readonly opts: {
       agentsRoot: string;
       sandbox: SandboxMode;
-      /** 按 agent 提供 LLM 代理连接（token 细分计量） */
-      llmProxyFor?: (agentId: string) => { url: string; token: string; model?: string } | undefined;
+      /** 按 agent 提供 LLM 代理连接（token 细分计量；字段名与 SandboxContext 对齐） */
+      llmProxyFor?: (
+        agentId: string,
+      ) => { llmProxyUrl: string; llmProxyToken: string; llmProxyModel?: string } | undefined;
     },
   ) {}
 

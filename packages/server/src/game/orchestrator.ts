@@ -75,7 +75,9 @@ export class Orchestrator {
     private readonly sandbox: SandboxAdapter,
     private readonly sinks: GameSinks,
     /** 按 agent 提供 LLM 代理连接信息（token 细分以便计量；返回 undefined 则不注入） */
-    private readonly llmProxyFor?: (agentId: string) => { url: string; token: string; model?: string } | undefined,
+    private readonly llmProxyFor?: (
+      agentId: string,
+    ) => { llmProxyUrl: string; llmProxyToken: string; llmProxyModel?: string } | undefined,
   ) {}
 
   async run(opts: {
