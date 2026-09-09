@@ -1,7 +1,61 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { api, type GameRow } from "../api.js";
 import { useTopic, type BusEvent } from "../ws.js";
+import { CAUSE_NAME, ICONS, ROLE_CLS, ROLE_NAME, toast } from "../components.js";
+
+/* ─── 统一 UI 事件（WS 实时与 DB 回放共用同一转换） ─── */
+type UiEvent =
+  | { t: "phase"; mode: "night" | "day" | "over"; text: string; meta?: string }
+  | { t: "dawn"; night: number; deaths: number[] }
+  | { t: "hunter"; by: number; target: number | null }
+  | { t: "order"; order: number[] }
+  | { t: "speech" | "pk" | "lastwords"; seat: number; text: string }
+  | { t: "timeout"; seat: number; which: string }
+  | { t: "vote"; revote?: boolean; tally: Array<{ voter: number; target: number | null }>; eliminated: number | null; pk: number[] }
+  | { t: "dq"; seat: number; reason: string }
+  | { t: "win"; faction: string; reason: string }
+  | { t: "reveal"; seats: Array<{ seat: number; role: string }> };
+
+function fromBusEvent(kind: string, payload: Record<string, unknown>): UiEvent | null {
+  // 动态事件负载入口：宽松索引（zod 校验在采集侧完成）
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const p = payload as Record<string, any>;
+  switch (kind) {
+    case "night_begun":
+      return { t: "phase", mode: "night", text: `第 ${p.night} 夜 · 行动中`, meta: `第 ${p.night} 夜 · 私有通道行动` };
+    case "dawn_deaths":
+      return { t: "dawn", night: p.night, deaths: p.deaths };
+    case "speech_order":
+      return { t: "order", order: p.order };
+    case "speech":
+      return { t: p.kind === "pk" ? "pk" : "speech", seat: p.seat, text: p.text };
+    case "last_words":
+      return { t: "lastwords", seat: p.seat, text: p.text };
+    case "hunter_shot":
+      return { t: "hunter", by: p.by, target: p.target };
+    case "timeout_default":
+      return { t: "timeout", seat: p.seat, which: String(p.which) };
+    case "player_disqualified":
+      return { t: "dq", seat: p.seat, reason: p.reason };
+    case "vote_result":
+      return { t: "vote", revote: p.round === 2, tally: p.tally, eliminated: p.eliminated, pk: p.pk_candidates ?? [] };
+    case "win":
+      return { t: "win", faction: p.faction, reason: p.reason };
+    case "reveal":
+      return { t: "reveal", seats: p.seats };
+    case "game_started":
+      return { t: "phase", mode: "over", text: "对局开始 · 天黑请闭眼", meta: "9 人局 · 屠边制" };
+    default:
+      return null;
+  }
+}
+
+/* ─── feed 项 ─── */
+type FeedItem =
+  | { kind: "msg"; who: string; text: string; cls?: string }
+  | { kind: "sys"; icon: keyof typeof ICONS; html: React.ReactNode; bad?: boolean }
+  | { kind: "vote"; revote?: boolean; tally: Array<{ voter: number; target: number | null }>; note: React.ReactNode };
 
 interface SeatView {
   seat: number;
@@ -9,214 +63,434 @@ interface SeatView {
   alive: boolean;
   death?: { cause: string; turn: number };
 }
-interface Snapshot {
-  gameId: string;
-  night: number;
-  day: number;
-  phase: string;
-  alive: number[];
-  seats: SeatView[];
-  winner?: { faction: string; reason: string };
-}
-
-interface FeedItem {
-  id: string;
-  type: "speech" | "last_words" | "pk" | "notice" | "vote" | "tally";
-  seat?: number;
-  text?: string;
-  extra?: unknown;
-}
 
 export function GameView() {
-  const { id } = useParams<{ id: string }>();
+  const { id: routeId } = useParams<{ id?: string }>();
+  const navigate = useNavigate();
+
+  const [gameId, setGameId] = useState<string | null>(routeId ?? null);
   const [game, setGame] = useState<GameRow | null>(null);
-  const [revealed, setRevealed] = useState<Array<{ seat: number; role: string; faction: string; teamWon: boolean | null }> | null>(null);
-  const [snap, setSnap] = useState<Snapshot | null>(null);
+  const [seats, setSeats] = useState<SeatView[]>([]);
+  const [roleMap, setRoleMap] = useState<Record<number, string>>({});
+  const [isLive, setIsLive] = useState(false);
+
+  // 回放事件
+  const [events, setEvents] = useState<UiEvent[]>([]);
+  const [gIdx, setGIdx] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(1);
+
+  // 渲染状态
+  const [phase, setPhase] = useState<{ mode: "night" | "day" | "over"; text: string; meta?: string }>({
+    mode: "over",
+    text: "等待开始",
+  });
+  const [deadMap, setDeadMap] = useState<Record<number, string>>({});
+  const [revealed, setRevealed] = useState(false);
+  const [speaking, setSpeaking] = useState<number | null>(null);
   const [feed, setFeed] = useState<FeedItem[]>([]);
-  const [live, setLive] = useState(true);
   const feedEnd = useRef<HTMLDivElement>(null);
 
-  const loadMeta = useCallback(() => {
-    if (!id) return;
-    api.game(id).then((d) => {
-      setGame(d.game);
-      setRevealed(d.game.status === "done" ? d.seats.map((s) => ({ seat: s.seat, role: s.role, faction: s.teamWon ? (s.role === "werewolf" ? "werewolf" : "village") : s.role === "werewolf" ? "werewolf" : "village", teamWon: s.teamWon })) : null);
-    }).catch(() => {});
-  }, [id]);
-  useEffect(loadMeta, [loadMeta]);
+  const seatName = useCallback((i: number) => seats.find((s) => s.seat === i)?.name ?? "", [seats]);
 
-  // 已结束的对局：拉取全量事件回放
+  const applyEvent = useCallback((ev: UiEvent) => {
+    const add = (f: FeedItem) => setFeed((old) => [...old.slice(-200), f]);
+    switch (ev.t) {
+      case "phase":
+        setPhase({ mode: ev.mode, text: ev.text, meta: ev.meta });
+        if (ev.mode === "night") {
+          add({ kind: "sys", icon: "moon", html: <>夜晚行动经私有通道回复，旁观视角不可见</> });
+          setSpeaking(null);
+        }
+        break;
+      case "dawn": {
+        setPhase({ mode: "day", text: `第 ${ev.night} 天 · 黎明`, meta: `第 ${ev.night} 夜结算` });
+        if (ev.deaths.length) {
+          setDeadMap((d) => ({ ...d, ...Object.fromEntries(ev.deaths.map((s) => [s, "out"] as const)) }));
+          add({
+            kind: "sys",
+            icon: "skull",
+            bad: true,
+            html: (
+              <>
+                天亮，昨夜 <span className="num">{ev.deaths.join("、")}</span> 号倒下（不公布死因）
+              </>
+            ),
+          });
+        } else {
+          add({ kind: "sys", icon: "sun", html: <>天亮，平安夜</> });
+        }
+        break;
+      }
+      case "hunter": {
+        const target = ev.target;
+        if (target != null) {
+          setDeadMap((d) => ({ ...d, [target]: "hunter" }));
+          add({
+            kind: "sys",
+            icon: "scope",
+            bad: true,
+            html: (
+              <>
+                <span className="num">{ev.by}</span> 号翻牌猎人，开枪带走 <span className="num">{ev.target}</span> 号
+              </>
+            ),
+          });
+        } else {
+          add({ kind: "sys", icon: "scope", html: <><span className="num">{ev.by}</span> 号翻牌猎人，未开枪</> });
+        }
+        break;
+      }
+      case "order":
+        add({ kind: "sys", icon: "order", html: <>发言顺序：<span className="num">{ev.order.join(" → ")}</span></> });
+        break;
+      case "speech":
+      case "pk":
+      case "lastwords":
+        add({
+          kind: "msg",
+          who: `${ev.seat} 号 · ${ev.t === "pk" ? "PK 辩词" : ev.t === "lastwords" ? "遗言" : "发言"}`,
+          text: ev.text,
+          cls: ev.t === "pk" ? "pk" : ev.t === "lastwords" ? "lastwords" : undefined,
+        });
+        setSpeaking(ev.seat);
+        break;
+      case "timeout":
+        add({
+          kind: "sys",
+          icon: "clock",
+          bad: true,
+          html: (
+            <>
+              <span className="num">{ev.seat}</span> 号{ev.which}超时，平台已代答 · penalty <span className="num">−0.1</span>
+            </>
+          ),
+        });
+        setSpeaking(ev.seat);
+        break;
+      case "vote": {
+        const eliminated = ev.eliminated;
+        const note = ev.pk.length
+          ? `平票：${ev.pk.join("、")} 号进入 PK 辩词`
+          : eliminated != null
+            ? `${eliminated} 号被放逐${ev.revote ? "（PK 者不参与再投票）" : ""}`
+            : "平安日，无人出局";
+        add({ kind: "vote", revote: ev.revote, tally: ev.tally, note });
+        if (eliminated != null) setDeadMap((d) => ({ ...d, [eliminated]: "vote" }));
+        setSpeaking(null);
+        break;
+      }
+      case "dq":
+        setDeadMap((d) => ({ ...d, [ev.seat]: "disqualify" }));
+        add({
+          kind: "sys",
+          icon: "skull",
+          bad: true,
+          html: (
+            <>
+              <span className="num">{ev.seat}</span> 号因违规被取消资格 · {ev.reason}
+            </>
+          ),
+        });
+        break;
+      case "win":
+        setPhase({ mode: "over", text: `对局结束 · ${ev.faction === "werewolf" ? "狼人阵营" : "好人阵营"}获胜`, meta: ev.reason });
+        add({
+          kind: "msg",
+          who: "胜方",
+          text: `${ev.faction === "werewolf" ? "狼人阵营" : "好人阵营"}获胜（${ev.reason}）`,
+          cls: "win-msg",
+        });
+        setSpeaking(null);
+        break;
+      case "reveal":
+        setRevealed(true);
+        setRoleMap(Object.fromEntries(ev.seats.map((s) => [s.seat, s.role])));
+        add({ kind: "sys", icon: "trophy", html: <>全员翻牌 · 对局事件流已入档，可审计重放</> });
+        break;
+    }
+  }, []);
+
+  /* ─── 数据加载 ─── */
   useEffect(() => {
-    if (!id || !game || game.status !== "done") return;
-    setLive(false);
-    fetch(`/api/games/${id}/events`)
-      .then((r) => r.text())
-      .then((text) => {
-        const items: FeedItem[] = [];
-        let i = 0;
-        for (const line of text.split("\n").filter(Boolean)) {
+    let cancelled = false;
+    const load = async () => {
+      let gid = routeId ?? null;
+      let g: GameRow | null = null;
+      if (!gid) {
+        const games = await api.listGames().catch(() => [] as GameRow[]);
+        if (cancelled) return;
+        const latest = games[games.length - 1];
+        if (!latest) return;
+        gid = latest.id;
+      }
+      try {
+        const d = await api.game(gid);
+        if (cancelled) return;
+        g = d.game;
+        setGame(d.game);
+        if (d.seats.length) {
+          setSeats(d.seats.map((s) => ({ seat: s.seat, name: agentNameOf(s.agentId), alive: s.alive })));
+          setRoleMap(Object.fromEntries(d.seats.map((s) => [s.seat, s.role])));
+          if (d.game.status === "done") setRevealed(true);
+        }
+      } catch {
+        /* 对局可能还没写 seats */
+      }
+      if (!g) return;
+      const live = g.status === "running";
+      setIsLive(live);
+      setGameId(gid);
+      if (!live) {
+        // 回放模式：拉全量事件
+        const text = await api.gameEvents(gid).catch(() => "");
+        if (cancelled) return;
+        const evs: UiEvent[] = [];
+        for (const line of text.split("\n")) {
+          if (!line.trim()) continue;
           try {
-            const ev = JSON.parse(line) as { kind: string; payload: unknown; private?: unknown };
-            const item = toFeedItem(ev.kind, ev.payload, i++);
-            if (item) items.push(item);
+            const raw = JSON.parse(line) as { kind: string; payload: unknown };
+            const ev = fromBusEvent(raw.kind, (raw.payload ?? {}) as Record<string, unknown>);
+            if (ev) evs.push(ev);
           } catch {
             /* skip */
           }
         }
-        setFeed(items);
-      })
-      .catch(() => {});
-  }, [id, game]);
+        setEvents(evs);
+        setGIdx(0);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [routeId]);
 
-  // 进行中对局：WS 实时
-  const onEvent = useCallback((ev: BusEvent) => {
-    if (ev.kind === "snapshot") {
-      setSnap(ev.payload as Snapshot);
+  // seats 名称回填（实时模式 snapshot 提供）
+  const nameCache = useRef(new Map<string, string>());
+  function agentNameOf(agentId: string): string {
+    return nameCache.current.get(agentId) ?? agentId.slice(0, 12);
+  }
+
+  /* ─── WS 实时 ─── */
+  const onEvent = useCallback(
+    (ev: BusEvent) => {
+      if (ev.kind === "snapshot") {
+        const snap = ev.payload as { seats: SeatView[]; alive: number[] };
+        if (snap.seats?.length) setSeats(snap.seats);
+        return;
+      }
+      if (ev.kind === "violation") return;
+      const ui = fromBusEvent(ev.kind, (ev.payload ?? {}) as Record<string, unknown>);
+      if (ui) applyEvent(ui);
+    },
+    [applyEvent],
+  );
+  useTopic(isLive && gameId ? `game/${gameId}` : null, onEvent);
+
+  /* ─── 回放器 ─── */
+  useEffect(() => {
+    if (!playing) return;
+    if (gIdx >= events.length) {
+      setPlaying(false);
       return;
     }
-    const item = toFeedItem(ev.kind, ev.payload, `${ev.kind}-${ev.seq ?? feed.length}`);
-    if (item) setFeed((f) => [...f.slice(-200), item]);
-  }, [feed.length]);
-  useTopic(live && game?.status !== "done" && id ? `game/${id}` : null, onEvent);
+    const timer = setTimeout(() => {
+      applyEvent(events[gIdx]!);
+      setGIdx((i) => i + 1);
+    }, 1500 / speed);
+    return () => clearTimeout(timer);
+  }, [playing, gIdx, events, speed, applyEvent]);
 
   useEffect(() => {
-    feedEnd.current?.scrollIntoView({ behavior: "smooth" });
+    feedEnd.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [feed.length]);
 
-  const phaseClass = !snap
-    ? "over"
-    : snap.winner
-      ? "over"
-      : snap.phase.includes("夜")
-        ? "night"
-        : "day";
+  const step = () => {
+    if (gIdx >= events.length) resetReplay();
+    else {
+      applyEvent(events[gIdx]!);
+      setGIdx((i) => i + 1);
+    }
+  };
+  const resetReplay = () => {
+    setPlaying(false);
+    setGIdx(0);
+    setDeadMap({});
+    setRevealed(game?.status === "done" && !!Object.keys(roleMap).length ? game.status === "done" : false);
+    setSpeaking(null);
+    setFeed([]);
+    setPhase({ mode: "over", text: "等待开始", meta: "9 人局 · 屠边" });
+    if (game?.status === "done" && seats.length) setRevealed(true);
+  };
+
+  const aliveCount = seats.length - Object.keys(deadMap).length;
+  const phaseIcon = phase.mode === "night" ? ICONS.moon : phase.mode === "day" ? ICONS.sun : ICONS.clock;
+  const hubLabel = phase.mode === "night" ? "夜 · 存活" : phase.mode === "day" ? "昼 · 存活" : "存活";
+
+  const ringSeats = useMemo(() => seats, [seats]);
 
   return (
-    <div className="page">
-      <div className={`phase-bar ${phaseClass}`}>
-        {snap?.winner
-          ? `🏆 ${snap.winner.faction === "werewolf" ? "狼人阵营" : "好人阵营"}获胜：${snap.winner.reason}`
-          : (snap?.phase ?? (game?.status === "done" ? "对局结束" : "等待开始…"))}
-        {snap && !snap.winner && <span className="muted" style={{ marginLeft: 12, fontSize: 12 }}>存活 {snap.alive.length}</span>}
-      </div>
-
-      <div className="grid2">
-        <div className="panel">
-          <h2>座位</h2>
-          <div className="seats">
-            {(snap?.seats ?? []).map((s) => {
-              const rv = revealed?.find((r) => r.seat === s.seat);
-              return (
-                <div key={s.seat} className={`seat ${s.alive ? "" : "dead"}`}>
-                  <div className="no">{s.seat} 号</div>
-                  <div className="nm">{s.name}</div>
-                  <div className="rl">
-                    {rv ? (
-                      <span className={`tag ${rv.faction}`}>{roleName(rv.role)}</span>
-                    ) : s.alive ? (
-                      <span className="muted">存活</span>
-                    ) : (
-                      <span className="tag fail">{causeName(s.death?.cause)}</span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-            {!snap && <span className="muted">等待对局数据…</span>}
-          </div>
-        </div>
-
-        <div className="panel">
-          <h2>现场</h2>
-          <div className="feed">
-            {feed.map((f) => (
-              <div key={f.id} className={`msg ${f.type === "pk" ? "pk" : f.type === "last_words" ? "lastwords" : ""}`}>
-                {f.type === "speech" || f.type === "pk" || f.type === "last_words" ? (
-                  <>
-                    <div className="who">
-                      {f.seat} 号 · {f.type === "pk" ? "PK 辩词" : f.type === "last_words" ? "遗言" : "发言"}
-                    </div>
-                    <div>{f.text}</div>
-                  </>
-                ) : (
-                  renderNotice(f)
-                )}
+    <section className="section screen-pad">
+      <div className="container">
+        <div className="screen-head">
+          <div className="row-between" style={{ alignItems: "flex-end", flexWrap: "wrap", gap: 20 }}>
+            <div>
+              <p className="eyebrow">SPECTATE · 实时观战 / 事件回放</p>
+              <h1 className="screen-title">{game ? `${gameName(game)} · 第 ${game.seq} 局` : "对局观战"}</h1>
+              <p className="lead">
+                板型 9 人 · 屠边制 · 种子 <span className="num">{game?.id.slice(5, 13) ?? "…"}</span> · 事件流 append-only 入库可审计
+              </p>
+            </div>
+            {isLive ? (
+              <div className="replay-bar">
+                <span className="tag st-warn">
+                  <span className="dot" />
+                  直播中
+                </span>
+                <button className="btn btn-ghost btn-sm" onClick={() => navigate("/tournaments")}>
+                  返回锦标赛
+                </button>
               </div>
-            ))}
-            {feed.length === 0 && <span className="muted">（暂无事件）</span>}
-            <div ref={feedEnd} />
+            ) : (
+              <div className="replay-bar">
+                <button className="btn btn-primary btn-sm" onClick={() => (gIdx >= events.length ? (resetReplay(), setPlaying(true)) : setPlaying(!playing))}>
+                  {playing ? ICONS.pause : ICONS.play}
+                  <span>{playing ? "暂停" : gIdx >= events.length ? "重播" : "播放"}</span>
+                </button>
+                <button className="btn btn-secondary btn-sm" onClick={step}>
+                  单步
+                </button>
+                <span className="seg" role="group" aria-label="回放速度">
+                  {[1, 2, 4].map((s) => (
+                    <button key={s} data-speed={s} className={speed === s ? "active" : ""} onClick={() => setSpeed(s)}>
+                      {s}×
+                    </button>
+                  ))}
+                </span>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => {
+                    resetReplay();
+                    toast("已重置回放 · 从第 1 夜开始");
+                  }}
+                >
+                  重放
+                </button>
+              </div>
+            )}
+          </div>
+          <p className="progress-note" style={{ marginTop: 14 }}>
+            {isLive
+              ? "实时事件流推送中 · 旁观视角仅见公开事件（角色私有信息不广播）"
+              : `事件 ${gIdx} / ${events.length} · 旁观视角仅见公开事件（角色私有信息不广播）`}
+          </p>
+        </div>
+
+        <div className="grid-2">
+          <div>
+            <div className={`phase-strip ${phase.mode}`}>
+              <span className="ph-label">
+                {phaseIcon}
+                <span>{phase.text}</span>
+              </span>
+              <span className="meta">{phase.meta ?? "9 人局 · 屠边"}</span>
+            </div>
+
+            <div className="seat-ring">
+              <div className="ring-hub">
+                <div className="hub-phase">{hubLabel}</div>
+                <div className="hub-alive num">
+                  <span>{aliveCount}</span>
+                  <small> / {seats.length || 9}</small>
+                </div>
+              </div>
+              {ringSeats.map((s, i) => {
+                const ang = (-90 + i * (360 / (ringSeats.length || 9))) * (Math.PI / 180);
+                const R = 36.5;
+                const dead = deadMap[s.seat];
+                return (
+                  <div
+                    key={s.seat}
+                    className={`seat ${dead ? "dead" : ""} ${speaking === s.seat ? "speaking" : ""}`}
+                    style={{ left: `${50 + R * Math.cos(ang)}%`, top: `${50 + R * Math.sin(ang)}%` }}
+                  >
+                    <div className="no num">{s.seat}</div>
+                    <div className="nm">{s.name}</div>
+                    <div className="rl">
+                      {(() => {
+                        const role = revealed ? roleMap[s.seat] : undefined;
+                        if (role) {
+                          return (
+                            <span className={`tag ${ROLE_CLS[role] ?? ""}`}>{ROLE_NAME[role] ?? role}</span>
+                          );
+                        }
+                        return dead ? (
+                          <span className="tag st-fail">{CAUSE_NAME[dead] ?? "出局"}</span>
+                        ) : (
+                          <span className="meta" style={{ fontSize: 11 }}>
+                            存活
+                          </span>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                );
+              })}
+              {ringSeats.length === 0 && <p className="empty-hint">等待对局数据…</p>}
+            </div>
+          </div>
+
+          <div className="card">
+            <h2 className="panel-title">现场</h2>
+            <div className="feed">
+              {feed.length === 0 && (
+                <div className="sysline">
+                  {ICONS.clock}
+                  <span>
+                    {isLive ? "实时事件流等待推送……" : "回放已就绪——按「播放」逐事件重放这局比赛，或用「单步」逐步检视。"}
+                  </span>
+                </div>
+              )}
+              {feed.map((f, i) => {
+                if (f.kind === "msg")
+                  return (
+                    <div key={i} className={`msg ${f.cls ?? ""}`}>
+                      <div className="who">{f.who}</div>
+                      <div>{f.text}</div>
+                    </div>
+                  );
+                if (f.kind === "vote")
+                  return (
+                    <div key={i} className="msg">
+                      <div className="who">投票{f.revote ? " · PK 再投票" : ""}</div>
+                      <div className="tally">
+                        {f.tally.map((b, j) => (
+                          <span key={j} className="vote">
+                            {b.voter}→{b.target ?? "弃"}
+                          </span>
+                        ))}
+                      </div>
+                      <div>{f.note}</div>
+                    </div>
+                  );
+                const Icon = ICONS[f.icon];
+                return (
+                  <div key={i} className={`sysline ${f.bad ? "bad-note" : ""}`}>
+                    {Icon}
+                    <span>{f.html}</span>
+                  </div>
+                );
+              })}
+              <div ref={feedEnd} />
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </section>
   );
 }
 
-function toFeedItem(kind: string, payload: unknown, key: string | number): FeedItem | null {
-  const p = (payload ?? {}) as Record<string, unknown>;
-  switch (kind) {
-    case "speech":
-      return { id: String(key), type: p.kind === "pk" ? "pk" : "speech", seat: p.seat as number, text: p.text as string };
-    case "last_words":
-      return { id: String(key), type: "last_words", seat: p.seat as number, text: p.text as string };
-    case "night_begun":
-      return { id: String(key), type: "notice", text: `🌙 第 ${p.night} 夜开始` };
-    case "dawn_deaths": {
-      const d = (p.deaths as number[]) ?? [];
-      return { id: String(key), type: "notice", text: d.length ? `☀️ 天亮，昨夜 ${d.join("、")} 号倒下` : "☀️ 天亮，平安夜" };
-    }
-    case "speech_order":
-      return { id: String(key), type: "notice", text: `🗣️ 发言顺序：${(p.order as number[])?.join(" → ")}` };
-    case "vote_result":
-      return { id: String(key), type: "vote", extra: p };
-    case "hunter_shot":
-      return {
-        id: String(key),
-        type: "notice",
-        text: p.target ? `🔫 ${p.by} 号翻牌猎人，带走 ${p.target} 号` : `🔫 ${p.by} 号翻牌猎人，未开枪`,
-      };
-    case "timeout_default":
-      return { id: String(key), type: "notice", text: `⏱ ${p.seat} 号超时（${p.which}），平台代答` };
-    case "player_disqualified":
-      return { id: String(key), type: "notice", text: `⚠️ ${p.seat} 号因违规被取消资格` };
-    case "win":
-      return { id: String(key), type: "notice", text: `🏆 ${p.faction === "werewolf" ? "狼人阵营" : "好人阵营"}获胜（${p.reason}）` };
-    case "game_summary":
-      return { id: String(key), type: "notice", text: `📊 对局结束${p.mvp ? `，MVP：${p.mvp} 号` : ""}` };
-    default:
-      return null;
-  }
-}
-
-function renderNotice(f: FeedItem) {
-  if (f.type === "vote") {
-    const p = f.extra as { tally?: Array<{ voter: number; target: number | null }>; eliminated?: number | null; pk_candidates?: number[]; round?: number };
-    return (
-      <>
-        <div className="who">🗳️ 投票{p.round === 2 ? "（PK 再投票）" : ""}</div>
-        <div className="tally">
-          {p.tally?.map((b, i) => (
-            <span key={i} className="vote">
-              {b.voter}→{b.target ?? "弃"}
-            </span>
-          ))}
-        </div>
-        <div style={{ marginTop: 4 }}>
-          {p.pk_candidates?.length
-            ? `平票：${p.pk_candidates.join("、")} 号进入 PK`
-            : p.eliminated != null
-              ? `${p.eliminated} 号被放逐`
-              : "平安日，无人出局"}
-        </div>
-      </>
-    );
-  }
-  return <div>{f.text}</div>;
-}
-
-function roleName(r: string) {
-  return { werewolf: "狼人", seer: "预言家", witch: "女巫", hunter: "猎人", villager: "村民" }[r] ?? r;
-}
-function causeName(c?: string) {
-  return { wolf: "夜晚遇害", poison: "中毒", vote: "被放逐", hunter: "被枪杀", disqualify: "违规" }[c ?? ""] ?? "出局";
+function gameName(g: GameRow): string {
+  return g.tournamentId ? `锦标赛 ${g.tournamentId.slice(0, 8)}` : "独立对局";
 }

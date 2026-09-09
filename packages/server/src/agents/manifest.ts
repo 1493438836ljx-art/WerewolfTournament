@@ -14,6 +14,8 @@ export const agentManifestSchema = z.object({
     cpus: z.number().min(0.1).max(4),
   }),
   network: z.enum(["none", "proxy"]),
+  /** 审批后的自定义运行时镜像（缺省按 language 映射 wt-agent-python/node） */
+  image: z.string().max(128).optional(),
 });
 
 export type AgentManifest = z.infer<typeof agentManifestSchema>;

@@ -1,8 +1,8 @@
 // REST API：agents / tournaments / games / referee。
 import type { FastifyInstance } from "fastify";
-import { asc, eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { agents, gameEvents, games, gameSeats, scores, tournaments } from "../db/schema.js";
+import { agents, gameEvents, games, gameSeats, llmCalls, scores, tournaments } from "../db/schema.js";
 import { getAgent, listAgents, registerAgent, removeAgent, scanAndRegister, updateSelfcheck } from "../agents/registry.js";
 import { loadManifest } from "../agents/manifest.js";
 import { AgentProcess } from "../agents/runner.js";
@@ -133,6 +133,19 @@ export function registerRest(app: FastifyInstance, gameService: GameService, opt
 
   // ---------- referee ----------
   app.get("/api/referee/health", async () => refereeHealth());
+
+  app.get("/api/referee/calls", async () => {
+    const rows = await db.select().from(llmCalls).orderBy(desc(llmCalls.id)).limit(12);
+    return rows.map((r) => ({
+      id: r.id,
+      purpose: r.purpose,
+      model: r.model,
+      tokens: r.inTokens + r.outTokens,
+      ok: r.ok,
+      latencyMs: r.latencyMs,
+      createdAt: r.createdAt,
+    }));
+  });
 
   app.post("/api/admin/referee/mode", async (req) => {
     const body = (req.body ?? {}) as { mode?: RefereeMode };

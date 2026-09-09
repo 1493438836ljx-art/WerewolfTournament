@@ -70,7 +70,8 @@ export class AgentProcess {
     ap.proc.on("exit", (code, signal) => {
       if (ap.killed) return;
       ap.exited = true;
-      ap.failAll("crash", `进程退出 code=${code} signal=${signal}`);
+      const tail = ap.stderrTail.slice(-5).join(" | ").slice(0, 300);
+      ap.failAll("crash", `进程退出 code=${code} signal=${signal}${tail ? ` stderr: ${tail}` : ""}`);
     });
 
     const stdout = ap.proc.stdout;

@@ -11,9 +11,11 @@
 | 模式 | 场景 | 措施 |
 |---|---|---|
 | `none` | 本地开发 | 环境变量白名单清洗（PATH/HOME/WT_* 等，**剔除 DATABASE_URL、LLM_API_KEY 等敏感变量**）、独立工作目录、超时击杀 |
-| `docker` | 正式比赛（Linux 宿主） | `--network none` 或仅可达 LLM 代理的自定义网络、`--memory/--cpus/--pids-limit`、`--read-only` + tmpfs 工作目录、非 root 用户、源码只读挂载 |
+| `docker` | 正式比赛（已实测） | 每 agent 一容器：`--network none` 或仅可达 LLM 代理的专用网桥（icc 禁容器互访）、`--memory/--memory-swap/--cpus/--pids-limit` 按 manifest 强制、`--read-only` 根文件系统 + tmpfs 工作目录、非 root（10001）、源码只读挂载 `/agent`、`--rm` 自动回收 |
 
-正式比赛**强制 Linux + Docker 沙箱**（`WT_SANDBOX=docker`）。
+docker 模式启用：`.env` 设 `WT_SANDBOX=docker`，先跑 `scripts/build-agent-images.sh`（构建 `wt-agent-python/node` 镜像 + 创建 `wt-agent-net` 代理网络；受限网络环境可用 `--build-arg BASE=docker.m.daocloud.io/library/...` 加速基础镜像）。manifest 可选 `image` 字段覆盖运行时镜像（需赛事审批）。
+
+实测记录（macOS Docker Desktop，Linux 服务器同理）：9 容器对局完整终局、资源限制 inspect 断言（内存/pids/只读/非 root）、`network=none` 容器访问宿主被拒、kill 后容器自动回收、容器内 agent 经 `host.docker.internal` 调平台 LLM 代理 53 次全部成功。
 
 ## LLM 代理（公平的资源供给）
 
