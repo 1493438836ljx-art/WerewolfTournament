@@ -29,6 +29,7 @@ export interface GameRow {
 export interface TournamentRow {
   id: string;
   name: string;
+  kind: string;
   status: string;
 }
 
@@ -76,7 +77,13 @@ export const api = {
   },
 
   listTournaments: () => req("/api/tournaments").then((r: Response) => j<TournamentRow[]>(r)),
-  createTournament: (body: { name: string; agentIds: string[]; gamesPerAgent: number }) =>
+  createTournament: (body: {
+    name: string;
+    kind: "training" | "official";
+    agentIds?: string[];
+    gamesPerAgent?: number;
+    officialRounds?: number;
+  }) =>
     req("/api/tournaments", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then((r: Response) => j<{ id: string }>(r)),
   tournament: (id: string) =>
     req(`/api/tournaments/${id}`).then((r: Response) => j<{ tournament: TournamentRow; games: GameRow[] }>(r)),

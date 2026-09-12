@@ -115,17 +115,32 @@ export function registerRest(app: FastifyInstance, gameService: GameService, opt
 
   // ---------- tournaments ----------
   app.post("/api/tournaments", { preHandler: requireAuth("admin") }, async (req, reply) => {
-    const body = (req.body ?? {}) as { name?: string; agentIds?: string[]; gamesPerAgent?: number; maxConcurrentGames?: number };
-    if (!body.name || !Array.isArray(body.agentIds) || body.agentIds.length < 1) {
-      return reply.code(400).send({ error: "name 与 agentIds 必填" });
+    const body = (req.body ?? {}) as {
+      name?: string;
+      kind?: "training" | "official";
+      agentIds?: string[];
+      gamesPerAgent?: number;
+      officialRounds?: number;
+      maxConcurrentGames?: number;
+    };
+    const kind = body.kind === "official" ? "official" : "training";
+    if (!body.name) return reply.code(400).send({ error: "name 必填" });
+    if (kind === "training" && (!Array.isArray(body.agentIds) || body.agentIds.length < 1)) {
+      return reply.code(400).send({ error: "训练赛需要选择参赛 agent" });
     }
-    const id = await gameService.createTournament({
-      name: body.name,
-      agentIds: body.agentIds,
-      gamesPerAgent: body.gamesPerAgent ?? 2,
-      maxConcurrentGames: body.maxConcurrentGames ?? 1,
-    });
-    return reply.code(201).send({ id });
+    try {
+      const id = await gameService.createTournament({
+        name: body.name,
+        kind,
+        agentIds: body.agentIds ?? [],
+        gamesPerAgent: body.gamesPerAgent ?? 2,
+        officialRounds: body.officialRounds ?? 1,
+        maxConcurrentGames: body.maxConcurrentGames ?? 1,
+      });
+      return reply.code(201).send({ id });
+    } catch (e) {
+      return reply.code(400).send({ error: e instanceof Error ? e.message : String(e) });
+    }
   });
 
   app.get("/api/tournaments", { preHandler: requireAuth() }, async () => db.select().from(tournaments));

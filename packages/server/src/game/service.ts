@@ -10,14 +10,17 @@ import { sandboxFor, type SandboxMode } from "../agents/sandbox.js";
 import { EventBus } from "./bus.js";
 import { Orchestrator, type GameResult, type PlayerSpec } from "./orchestrator.js";
 import { createGameRecord, dbSinks } from "./recorder.js";
-import { planTournament } from "../tournament/scheduler.js";
+import { planOfficial, planTournament } from "../tournament/scheduler.js";
 import { scoreSeat } from "../tournament/scoring.js";
 import { getReferee } from "../llmreferee.js";
 
 export interface TournamentConfig {
   name: string;
+  kind: "training" | "official";
   agentIds: string[];
   gamesPerAgent: number;
+  /** 正式比赛：每个 agent 上场的轮数（每轮全员参与） */
+  officialRounds: number;
   maxConcurrentGames: number;
 }
 
@@ -39,12 +42,26 @@ export class GameService {
 
   async createTournament(cfg: TournamentConfig): Promise<string> {
     const id = `t-${randomUUID().slice(0, 10)}`;
-    const plan = planTournament({ agentIds: cfg.agentIds, gamesPerAgent: cfg.gamesPerAgent });
+    // 正式比赛：忽略传入的 agentIds，全员参与、系统轮转编排
+    let agentIds = cfg.agentIds;
+    if (cfg.kind === "official") {
+      agentIds = (await db.select({ id: agents.id }).from(agents)).map((r) => r.id);
+      if (agentIds.length < 2) throw new Error("正式比赛至少需要 2 个已注册 agent");
+    }
+    const plan =
+      cfg.kind === "official"
+        ? planOfficial({ agentIds, rounds: cfg.officialRounds })
+        : planTournament({ agentIds, gamesPerAgent: cfg.gamesPerAgent });
     await db.insert(tournaments).values({
       id,
       name: cfg.name,
+      kind: cfg.kind,
       status: "draft",
-      configJson: { ...cfg, games: plan.map((g) => ({ gameId: g.gameId, seq: g.seq, seed: g.seed, seats: Object.fromEntries(g.seats) })) },
+      configJson: {
+        ...cfg,
+        agentIds,
+        games: plan.map((g) => ({ gameId: g.gameId, seq: g.seq, seed: g.seed, seats: Object.fromEntries(g.seats) })),
+      },
     });
     return id;
   }

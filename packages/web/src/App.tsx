@@ -66,7 +66,7 @@ function Tabs() {
         : "agents";
   const items = [
     { key: "agents", to: "/", label: "选手 Agent" },
-    { key: "tournaments", to: "/tournaments", label: "锦标赛" },
+    { key: "tournaments", to: "/tournaments", label: "比赛" },
     { key: "game", to: "/games", label: "对局观战" },
     { key: "referee", to: "/referee", label: "裁判" },
   ];

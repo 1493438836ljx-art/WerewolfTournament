@@ -1,0 +1,1 @@
+ALTER TABLE "tournaments" ADD COLUMN "kind" text DEFAULT 'training' NOT NULL;

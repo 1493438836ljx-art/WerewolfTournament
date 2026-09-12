@@ -35,6 +35,8 @@ export const agents = pgTable("agents", {
 export const tournaments = pgTable("tournaments", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
+  /** training=训练赛（自由编排）| official=正式比赛（全员轮转） */
+  kind: text("kind").notNull().default("training"),
   status: text("status").notNull().default("draft"), // draft|running|done|aborted
   configJson: jsonb("config_json").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

@@ -4,11 +4,16 @@ import { api, type GameRow, type LeaderRow, type TournamentRow } from "../api.js
 import { StatusTag, toast } from "../components.js";
 import { useAuth } from "../auth.js";
 
+type Kind = "training" | "official";
+
+const KIND_TXT: Record<Kind, string> = { training: "训练赛", official: "正式比赛" };
+
 export function TournamentsPage() {
   const user = useAuth();
   const isAdmin = user?.role === "admin";
   const { id: selectedId } = useParams<{ id?: string }>();
   const navigate = useNavigate();
+  const [kindSel, setKindSel] = useState<Kind>("training");
 
   const [tours, setTours] = useState<TournamentRow[]>([]);
   const [agents, setAgents] = useState<Array<{ id: string; name: string }>>([]);
@@ -18,6 +23,7 @@ export function TournamentsPage() {
   // 创建表单
   const [name, setName] = useState("");
   const [gamesPer, setGamesPer] = useState(2);
+  const [rounds, setRounds] = useState(1);
   const [picked, setPicked] = useState<Record<string, boolean>>({});
   const [err, setErr] = useState("");
   const [creating, setCreating] = useState(false);
@@ -55,17 +61,33 @@ export function TournamentsPage() {
   }, [tours]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const create = async () => {
-    const ids = Object.keys(picked).filter((k) => picked[k]);
-    if (!name.trim() || ids.length === 0) {
-      setErr("名称与至少 1 个 agent 必填");
+    if (!name.trim()) {
+      setErr("名称必填");
+      return;
+    }
+    if (kindSel === "training" && Object.values(picked).filter(Boolean).length === 0) {
+      setErr("训练赛需要选择至少 1 个 agent");
       return;
     }
     setErr("");
     setCreating(true);
     try {
-      const r = await api.createTournament({ name: name.trim(), agentIds: ids, gamesPerAgent: gamesPer });
-      const total = Math.max(1, Math.round((ids.length * gamesPer) / 9));
-      toast(`已创建「${name.trim()}」· 预计 ${total} 局 · draft 状态`);
+      const r =
+        kindSel === "official"
+          ? await api.createTournament({ name: name.trim(), kind: "official", officialRounds: rounds })
+          : await api.createTournament({
+              name: name.trim(),
+              kind: "training",
+              agentIds: Object.keys(picked).filter((k) => picked[k]),
+              gamesPerAgent: gamesPer,
+            });
+      const total = selected;
+      void total;
+      toast(
+        kindSel === "official"
+          ? `已创建正式比赛「${name.trim()}」· 全员参与 · ${rounds} 轮（每轮每人上场一次）`
+          : `已创建训练赛「${name.trim()}」· draft 状态`,
+      );
       setName("");
       setPicked({});
       refreshList();
@@ -97,6 +119,7 @@ export function TournamentsPage() {
     toast(`${t.name} 已中止 · 已完成对局照常结算`);
   };
 
+  const visibleTours = tours.filter((t) => (t.kind ?? "training") === kindSel);
   const doneGames = selected?.games.filter((g) => g.status === "done").length ?? 0;
   const totalGames = selected?.games.length ?? 0;
 
@@ -104,82 +127,120 @@ export function TournamentsPage() {
     <section className="section screen-pad">
       <div className="container">
         <div className="screen-head">
-          <p className="eyebrow">COMPETITION · 赛制与积分</p>
-          <h1 className="screen-title">锦标赛</h1>
-          <p className="lead">
-            循环赛：每局 9 人对局，座位与角色由密码学种子决定（种子入库可审计）。同分先比净胜局，再比违规次数。
-          </p>
+          <div className="row-between" style={{ alignItems: "flex-end", flexWrap: "wrap", gap: 16 }}>
+            <div>
+              <p className="eyebrow">COMPETITION · 训练赛与正式比赛</p>
+              <h1 className="screen-title">比赛</h1>
+              <p className="lead">
+                训练赛自由编排随时打；正式比赛全员参与、系统轮转安排所有人轮流上场，座位与角色由密码学种子决定。
+              </p>
+            </div>
+            <span className="seg" role="group" aria-label="比赛类型">
+              <button className={kindSel === "training" ? "active" : ""} onClick={() => setKindSel("training")}>
+                训练赛
+              </button>
+              <button className={kindSel === "official" ? "active" : ""} onClick={() => setKindSel("official")}>
+                正式比赛
+              </button>
+            </span>
+          </div>
         </div>
 
         <div className="grid-1-2">
           {isAdmin ? (
-          <div className="card">
-            <h2 className="panel-title">创建锦标赛</h2>
-            <div className="stack" style={{ gap: 16 }}>
-              <div className="field">
-                <label htmlFor="t-name">名称</label>
-                <input
-                  className="input"
-                  id="t-name"
-                  type="text"
-                  placeholder="例如：周末排位 · 0912"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="t-games">每个 agent 局数（1–20）</label>
-                <input
-                  className="input num"
-                  id="t-games"
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={gamesPer}
-                  onChange={(e) => setGamesPer(Math.max(1, Math.min(20, Number(e.target.value) || 2)))}
-                  style={{ width: 120 }}
-                />
-              </div>
-              <div className="field">
-                <label>参赛 agent</label>
-                <div className="chips">
-                  {agents.map((a) => (
-                    <label key={a.id} className="chip">
+            <div className="card">
+              <h2 className="panel-title">创建{KIND_TXT[kindSel]}</h2>
+              <div className="stack" style={{ gap: 16 }}>
+                <div className="field">
+                  <label htmlFor="t-name">名称</label>
+                  <input
+                    className="input"
+                    id="t-name"
+                    type="text"
+                    placeholder={kindSel === "official" ? "例如：正式赛 · 第一赛季" : "例如：周末排位 · 0912"}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                </div>
+
+                {kindSel === "official" ? (
+                  <>
+                    <div className="field">
+                      <label htmlFor="t-rounds">轮数（每轮所有 agent 轮流上场一局，1–10）</label>
                       <input
-                        type="checkbox"
-                        checked={!!picked[a.id]}
-                        onChange={(e) => setPicked((p) => ({ ...p, [a.id]: e.target.checked }))}
+                        className="input num"
+                        id="t-rounds"
+                        type="number"
+                        min={1}
+                        max={10}
+                        value={rounds}
+                        onChange={(e) => setRounds(Math.max(1, Math.min(10, Number(e.target.value) || 1)))}
+                        style={{ width: 120 }}
                       />
-                      <span className="num">{a.name}</span>
-                    </label>
-                  ))}
-                  {agents.length === 0 && <span className="meta">先到「选手 Agent」页注册</span>}
+                    </div>
+                    <p className="meta" style={{ fontSize: 12.5 }}>
+                      参赛名单 = 当前全部已注册 agent（{agents.length} 个），系统按轮随机分组对局，每局 9 人；
+                      人数不是 9 的倍数时，尾局由本轮队伍头部轮转补位。
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="field">
+                      <label htmlFor="t-games">每个 agent 局数（1–20）</label>
+                      <input
+                        className="input num"
+                        id="t-games"
+                        type="number"
+                        min={1}
+                        max={20}
+                        value={gamesPer}
+                        onChange={(e) => setGamesPer(Math.max(1, Math.min(20, Number(e.target.value) || 2)))}
+                        style={{ width: 120 }}
+                      />
+                    </div>
+                    <div className="field">
+                      <label>参赛 agent</label>
+                      <div className="chips">
+                        {agents.map((a) => (
+                          <label key={a.id} className="chip">
+                            <input
+                              type="checkbox"
+                              checked={!!picked[a.id]}
+                              onChange={(e) => setPicked((p) => ({ ...p, [a.id]: e.target.checked }))}
+                            />
+                            <span className="num">{a.name}</span>
+                          </label>
+                        ))}
+                        {agents.length === 0 && <span className="meta">先到「选手 Agent」页注册</span>}
+                      </div>
+                    </div>
+                    <p className="meta" style={{ fontSize: 12 }}>
+                      参赛数 &lt; 9 时允许同一 agent 多副本参赛（开发/测试场景）
+                    </p>
+                  </>
+                )}
+
+                {err && <p className="form-error">{err}</p>}
+                <div>
+                  <button className="btn btn-primary" onClick={create} disabled={creating}>
+                    {creating ? "创建中…" : `创建${KIND_TXT[kindSel]}`}
+                  </button>
                 </div>
               </div>
-              {err && <p className="form-error">{err}</p>}
-              <div>
-                <button className="btn btn-primary" onClick={create} disabled={creating}>
-                  {creating ? "创建中…" : "创建锦标赛"}
-                </button>
-              </div>
-              <p className="meta" style={{ fontSize: 12 }}>
-                参赛数 &lt; 9 时允许同一 agent 多副本参赛（开发/测试场景）
-              </p>
             </div>
-          </div>
           ) : (
             <div className="card">
               <h2 className="panel-title">参赛方式</h2>
               <p className="meta" style={{ fontSize: 13 }}>
-                选手在「选手 Agent」页上传提交并自检通过后，由管理员编排锦标赛。
-                你可以在右侧查看所有赛程、实时观战与积分榜。
+                选手在「选手 Agent」页上传提交并自检通过后自动进入正式比赛候选名单；
+                训练赛与正式比赛由管理员编排。你可以在右侧查看所有赛程、实时观战与积分榜。
               </p>
             </div>
           )}
 
           <div className="stack" style={{ gap: 20 }}>
             <div className="card">
-              <h2 className="panel-title">锦标赛列表</h2>
+              <h2 className="panel-title">{KIND_TXT[kindSel]}列表</h2>
               <div className="table-wrap">
                 <table className="ds-table">
                   <thead>
@@ -190,7 +251,7 @@ export function TournamentsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {tours.map((t) => (
+                    {visibleTours.map((t) => (
                       <tr key={t.id} style={{ cursor: "pointer" }} onClick={() => navigate(`/tournaments/${t.id}`)}>
                         <td className="num">
                           <Link to={`/tournaments/${t.id}`} onClick={(e) => e.stopPropagation()}>
@@ -214,10 +275,10 @@ export function TournamentsPage() {
                         </td>
                       </tr>
                     ))}
-                    {tours.length === 0 && (
+                    {visibleTours.length === 0 && (
                       <tr>
                         <td colSpan={3} className="empty-hint">
-                          还没有锦标赛 —— 左侧表单创建第一个
+                          暂无{KIND_TXT[kindSel]}
                         </td>
                       </tr>
                     )}
@@ -236,7 +297,14 @@ export function TournamentsPage() {
                     </span>
                   )}
                 </h2>
-                {selected && <StatusTag status={selected.tournament.status} />}
+                {selected && (
+                  <span className="row" style={{ gap: 8 }}>
+                    <span className={`tag ${selected.tournament.kind === "official" ? "st-warn" : "st-pending"}`}>
+                      {KIND_TXT[(selected.tournament.kind as Kind) ?? "training"] ?? "训练赛"}
+                    </span>
+                    <StatusTag status={selected.tournament.status} />
+                  </span>
+                )}
               </div>
 
               {selected ? (
@@ -320,7 +388,7 @@ export function TournamentsPage() {
                   )}
                 </>
               ) : (
-                <p className="empty-hint">从上方列表选择一个锦标赛查看对局与积分</p>
+                <p className="empty-hint">从上方列表选择一场比赛查看对局与积分</p>
               )}
             </div>
           </div>
