@@ -10,6 +10,8 @@ export interface AgentRow {
   id: string;
   name: string;
   dir: string;
+  ownerId: string | null;
+  ownerName: string | null;
   manifestJson: AgentManifest;
   selfcheckStatus: string;
   selfcheckDetail: { ok?: boolean; latencyMs?: number; error?: string } | null;
@@ -40,40 +42,60 @@ export interface LeaderRow {
   timeouts: number;
 }
 
+import { getToken, onUnauthorized } from "./auth.js";
+
+async function req(url: string, init?: RequestInit): Promise<Response> {
+  const r = await fetch(url, {
+    ...init,
+    headers: {
+      ...(init?.headers ?? {}),
+      ...(getToken() ? { authorization: `Bearer ${getToken()}` } : {}),
+    },
+  });
+  if (r.status === 401) onUnauthorized();
+  return r;
+}
+
 async function j<T>(res: Response): Promise<T> {
   if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
   return res.json() as Promise<T>;
 }
 
 export const api = {
-  listAgents: () => fetch("/api/agents").then((r) => j<AgentRow[]>(r)),
-  scanAgents: () => fetch("/api/agents/scan", { method: "POST" }).then((r) => j<{ added: string[]; updated: string[] }>(r)),
+  listAgents: () => req("/api/agents").then((r: Response) => j<AgentRow[]>(r)),
+  scanAgents: () => req("/api/agents/scan", { method: "POST" }).then((r: Response) => j<{ added: string[]; updated: string[] }>(r)),
   selfcheck: (id: string) =>
-    fetch(`/api/agents/${id}/selfcheck`, { method: "POST" }).then((r) =>
+    req(`/api/agents/${id}/selfcheck`, { method: "POST" }).then((r: Response) =>
       j<{ ok: boolean; latencyMs: number; error?: string }>(r),
     ),
-  removeAgent: (id: string) => fetch(`/api/agents/${id}`, { method: "DELETE" }).then((r) => j<unknown>(r)),
+  removeAgent: (id: string) => req(`/api/agents/${id}`, { method: "DELETE" }).then((r: Response) => j<unknown>(r)),
+  uploadAgent: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return req("/api/agents/upload", { method: "POST", body: form }).then((r: Response) => j<{ id: string; name: string }>(r));
+  },
 
-  listTournaments: () => fetch("/api/tournaments").then((r) => j<TournamentRow[]>(r)),
+  listTournaments: () => req("/api/tournaments").then((r: Response) => j<TournamentRow[]>(r)),
   createTournament: (body: { name: string; agentIds: string[]; gamesPerAgent: number }) =>
-    fetch("/api/tournaments", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then((r) => j<{ id: string }>(r)),
+    req("/api/tournaments", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then((r: Response) => j<{ id: string }>(r)),
   tournament: (id: string) =>
-    fetch(`/api/tournaments/${id}`).then((r) => j<{ tournament: TournamentRow; games: GameRow[] }>(r)),
-  startTournament: (id: string) => fetch(`/api/tournaments/${id}/start`, { method: "POST" }).then((r) => j<unknown>(r)),
-  abortTournament: (id: string) => fetch(`/api/tournaments/${id}/abort`, { method: "POST" }).then((r) => j<unknown>(r)),
-  leaderboard: (id: string) => fetch(`/api/tournaments/${id}/leaderboard`).then((r) => j<LeaderRow[]>(r)),
+    req(`/api/tournaments/${id}`).then((r: Response) => j<{ tournament: TournamentRow; games: GameRow[] }>(r)),
+  startTournament: (id: string) => req(`/api/tournaments/${id}/start`, { method: "POST" }).then((r: Response) => j<unknown>(r)),
+  abortTournament: (id: string) => req(`/api/tournaments/${id}/abort`, { method: "POST" }).then((r: Response) => j<unknown>(r)),
+  leaderboard: (id: string) => req(`/api/tournaments/${id}/leaderboard`).then((r: Response) => j<LeaderRow[]>(r)),
 
-  listGames: () => fetch("/api/games").then((r) => j<GameRow[]>(r)),
+  listGames: () => req("/api/games").then((r: Response) => j<GameRow[]>(r)),
   game: (id: string) =>
-    fetch(`/api/games/${id}`).then((r) =>
+    req(`/api/games/${id}`).then((r: Response) =>
       j<{ game: GameRow; seats: Array<{ seat: number; agentId: string; role: string; alive: boolean; teamWon: boolean | null }> }>(r),
     ),
-  gameEvents: (id: string) => fetch(`/api/games/${id}/events`).then((r) => r.text()),
+  gameEvents: (id: string) => req(`/api/games/${id}/events`).then((r: Response) => r.text()),
 
   refereeHealth: () =>
-    fetch("/api/referee/health").then((r) =>
+    req("/api/referee/health").then((r: Response) =>
       j<{ mode: string; llmConfigured: boolean; breaker: { consecutiveFailures: number; open: boolean } }>(r),
     ),
   setRefereeMode: (mode: string) =>
-    fetch("/api/admin/referee/mode", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode }) }).then((r) => j<unknown>(r)),
+    req("/api/admin/referee/mode", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode }) }).then((r: Response) => j<unknown>(r)),
+  refereeCalls: () => req("/api/referee/calls").then((r: Response) => j<Array<{ id: number; purpose: string; model: string; tokens: number; ok: boolean; latencyMs: number; createdAt: string }>>(r)),
 };

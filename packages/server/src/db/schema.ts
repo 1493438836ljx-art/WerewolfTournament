@@ -12,11 +12,21 @@ import {
   serial,
 } from "drizzle-orm/pg-core";
 
+export const users = pgTable("users", {
+  id: text("id").primaryKey(),
+  username: text("username").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  role: text("role").notNull().default("player"), // admin | player
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const agents = pgTable("agents", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   dir: text("dir").notNull(),
   manifestJson: jsonb("manifest_json").notNull(),
+  /** 上传者（选手）；null = 平台自带（管理员） */
+  ownerId: text("owner_id").references(() => users.id),
   selfcheckStatus: text("selfcheck_status").notNull().default("pending"), // pending|ok|fail
   selfcheckDetail: jsonb("selfcheck_detail"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

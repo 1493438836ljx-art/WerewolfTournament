@@ -1,6 +1,7 @@
 import "dotenv/config";
 import Fastify from "fastify";
 import websocket from "@fastify/websocket";
+import multipart from "@fastify/multipart";
 import { execSync } from "node:child_process";
 import { EventBus } from "./game/bus.js";
 import { GameService } from "./game/service.js";
@@ -9,6 +10,8 @@ import { registerWs } from "./api/ws.js";
 import { initReferee } from "./llmreferee.js";
 import { llmConfigFromEnv } from "@wt/llm";
 import { createLlmProxy, proxyForAgent } from "./llmproxy.js";
+import { ensureAdminSeed, registerAuthRoutes } from "./auth.js";
+import { registerUploadRoute } from "./upload.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -18,6 +21,10 @@ const host = process.env.HOST ?? "0.0.0.0";
 
 const app = Fastify({ logger: true, bodyLimit: 4 * 1024 * 1024 });
 await app.register(websocket);
+await app.register(multipart, { limits: { fileSize: 20 * 1024 * 1024 } });
+
+await ensureAdminSeed();
+registerAuthRoutes(app);
 
 const bus = new EventBus();
 const agentsRoot = process.env.WT_AGENTS_ROOT ?? path.resolve(__dirname, "../../../agents");
@@ -59,6 +66,7 @@ if (sandbox === "docker") {
 }
 
 registerRest(app, gameService, { agentsRoot, sandbox });
+registerUploadRoute(app, { uploadsRoot: path.join(agentsRoot, "uploads") });
 registerWs(app, bus, {
   adminToken: process.env.WT_ADMIN_TOKEN,
   getGodView: () => null,

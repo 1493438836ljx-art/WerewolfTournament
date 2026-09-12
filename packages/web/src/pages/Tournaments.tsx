@@ -2,8 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, type GameRow, type LeaderRow, type TournamentRow } from "../api.js";
 import { StatusTag, toast } from "../components.js";
+import { useAuth } from "../auth.js";
 
 export function TournamentsPage() {
+  const user = useAuth();
+  const isAdmin = user?.role === "admin";
   const { id: selectedId } = useParams<{ id?: string }>();
   const navigate = useNavigate();
 
@@ -109,6 +112,7 @@ export function TournamentsPage() {
         </div>
 
         <div className="grid-1-2">
+          {isAdmin ? (
           <div className="card">
             <h2 className="panel-title">创建锦标赛</h2>
             <div className="stack" style={{ gap: 16 }}>
@@ -163,6 +167,15 @@ export function TournamentsPage() {
               </p>
             </div>
           </div>
+          ) : (
+            <div className="card">
+              <h2 className="panel-title">参赛方式</h2>
+              <p className="meta" style={{ fontSize: 13 }}>
+                选手在「选手 Agent」页上传提交并自检通过后，由管理员编排锦标赛。
+                你可以在右侧查看所有赛程、实时观战与积分榜。
+              </p>
+            </div>
+          )}
 
           <div className="stack" style={{ gap: 20 }}>
             <div className="card">
@@ -188,12 +201,12 @@ export function TournamentsPage() {
                           <StatusTag status={t.status} />
                         </td>
                         <td onClick={(e) => e.stopPropagation()}>
-                          {t.status === "draft" && (
+                          {isAdmin && t.status === "draft" && (
                             <button className="btn btn-secondary btn-sm" onClick={() => start(t)}>
                               开始比赛
                             </button>
                           )}
-                          {t.status === "running" && (
+                          {isAdmin && t.status === "running" && (
                             <button className="btn btn-secondary btn-sm" onClick={() => abort(t)}>
                               {abortConfirm === t.id ? "确认中止？" : "中止"}
                             </button>

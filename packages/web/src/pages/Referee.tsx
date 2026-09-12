@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
 import { StatusTag, toast } from "../components.js";
+import { useAuth } from "../auth.js";
 
 interface Health {
   mode: string;
@@ -32,15 +33,13 @@ const PURPOSE_TXT: Record<string, string> = {
 };
 
 export function RefereePage() {
+  const isAdmin = useAuth()?.role === "admin";
   const [h, setH] = useState<Health | null>(null);
   const [calls, setCalls] = useState<CallRow[]>([]);
 
   const refresh = useCallback(() => {
     api.refereeHealth().then(setH).catch(() => {});
-    fetch("/api/referee/calls")
-      .then((r) => r.json())
-      .then(setCalls)
-      .catch(() => {});
+    api.refereeCalls().then(setCalls).catch(() => {});
   }, []);
   useEffect(() => {
     refresh();
@@ -68,13 +67,19 @@ export function RefereePage() {
         <div className="grid-3">
           <div className="card">
             <h2 className="panel-title">裁判模式</h2>
-            <div className="seg" role="group" aria-label="裁判模式">
-              {["hybrid", "llm", "template"].map((m) => (
-                <button key={m} data-mode={m} className={h?.mode === m ? "active" : ""} onClick={() => setMode(m)}>
-                  {m}
-                </button>
-              ))}
-            </div>
+            {isAdmin ? (
+              <div className="seg" role="group" aria-label="裁判模式">
+                {["hybrid", "llm", "template"].map((m) => (
+                  <button key={m} data-mode={m} className={h?.mode === m ? "active" : ""} onClick={() => setMode(m)}>
+                    {m}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <span className="seg" role="group" aria-label="裁判模式">
+                <button className="active">{h?.mode ?? "…"}</button>
+              </span>
+            )}
             <p className="meta" style={{ marginTop: 14, fontSize: 12.5 }}>
               {h ? MODE_TXT(h.mode) : "…"}
             </p>

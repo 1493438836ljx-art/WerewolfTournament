@@ -1,0 +1,1 @@
+{"name":"my-upload-bot","language":"python","command":["python3","main.py"],"resources":{"memory_mb":256,"cpus":0.5},"network":"none"}

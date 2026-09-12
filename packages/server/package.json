@@ -13,6 +13,7 @@
     "db:migrate": "tsx src/db/migrate.ts"
   },
   "dependencies": {
+    "@fastify/multipart": "^10.1.1",
     "@fastify/websocket": "^11.0.0",
     "@wt/engine": "workspace:*",
     "@wt/llm": "workspace:*",
@@ -21,10 +22,12 @@
     "drizzle-orm": "^0.44.0",
     "fastify": "^5.0.0",
     "pg": "^8.13.0",
+    "tar": "^7.5.22",
     "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/pg": "^8.11.0",
+    "@types/tar": "^7.0.87",
     "drizzle-kit": "^0.31.0"
   }
 }

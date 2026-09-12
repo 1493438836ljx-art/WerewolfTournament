@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type AgentRow } from "../api.js";
 import { ICONS, ProtocolDialog, StatusTag, toast } from "../components.js";
+import { useAuth } from "../auth.js";
+import { useRef } from "react";
 
 type CheckState = { status: string; latency: number | null; error?: string };
 
@@ -11,9 +13,27 @@ function shortDir(dir: string): string {
 }
 
 export function AgentsPage() {
+  const user = useAuth();
+  const fileRef = useRef<HTMLInputElement>(null);
   const [agents, setAgents] = useState<AgentRow[]>([]);
   const [checks, setChecks] = useState<Record<string, CheckState>>({});
   const [scanning, setScanning] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  const upload = async (f: File) => {
+    if (uploading) return;
+    setUploading(true);
+    try {
+      const r = await api.uploadAgent(f);
+      toast(`上传成功：${r.name} · 已注册，建议立即自检`);
+      refresh();
+    } catch (e) {
+      toast(`上传失败: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
 
   const refresh = useCallback(() => {
     api.listAgents().then(setAgents).catch(() => {});
@@ -71,9 +91,21 @@ export function AgentsPage() {
           </div>
           <div className="row" style={{ gap: 10 }}>
             <ProtocolDialog />
-            <button className="btn btn-primary" onClick={scan} disabled={scanning}>
-              {ICONS.scan}
-              {scanning ? "扫描中…" : "扫描 agents/ 目录"}
+            {user?.role === "admin" && (
+              <button className="btn btn-secondary" onClick={scan} disabled={scanning}>
+                {ICONS.scan}
+                {scanning ? "扫描中…" : "扫描 agents/ 目录"}
+              </button>
+            )}
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".tar.gz,.tgz"
+              style={{ display: "none" }}
+              onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])}
+            />
+            <button className="btn btn-primary" onClick={() => fileRef.current?.click()} disabled={uploading}>
+              {uploading ? "上传中…" : "上传我的 Agent（tar.gz）"}
             </button>
           </div>
         </div>
@@ -84,6 +116,7 @@ export function AgentsPage() {
               <thead>
                 <tr>
                   <th>名称</th>
+                  <th>上传者</th>
                   <th>提交目录</th>
                   <th>语言 · 网络</th>
                   <th>资源</th>
@@ -103,7 +136,14 @@ export function AgentsPage() {
                   return (
                     <tr key={a.id}>
                       <td className="num">{a.name}</td>
-                      <td className="meta" style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }} title={a.dir}>
+                      <td>
+                        {a.ownerName ? (
+                          <span className="tag st-pending">{a.ownerName}</span>
+                        ) : (
+                          <span className="tag st-ok">平台</span>
+                        )}
+                      </td>
+                      <td className="meta" style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }} title={a.dir}>
                         {shortDir(a.dir)}
                       </td>
                       <td>
@@ -130,21 +170,23 @@ export function AgentsPage() {
                       </td>
                       <td className="num-col">{ck.latency != null ? `${ck.latency}ms` : "—"}</td>
                       <td>
-                        <span className="row" style={{ gap: 6 }}>
-                          <button className="btn btn-secondary btn-sm" onClick={() => selfcheck(a)}>
-                            {ck.status === "busy" ? "检测中…" : "自检"}
-                          </button>
-                          <button className="btn btn-ghost btn-sm" onClick={() => remove(a)}>
-                            移除
-                          </button>
-                        </span>
+                        {(user?.role === "admin" || a.ownerId === user?.id) && (
+                          <span className="row" style={{ gap: 6 }}>
+                            <button className="btn btn-secondary btn-sm" onClick={() => selfcheck(a)}>
+                              {ck.status === "busy" ? "检测中…" : "自检"}
+                            </button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => remove(a)}>
+                              移除
+                            </button>
+                          </span>
+                        )}
                       </td>
                     </tr>
                   );
                 })}
                 {agents.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="empty-hint">
+                    <td colSpan={8} className="empty-hint">
                       还没有注册的 agent —— 把提交放进 agents/ 目录后点「扫描 agents/ 目录」
                     </td>
                   </tr>

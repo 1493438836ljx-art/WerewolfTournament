@@ -4,8 +4,12 @@ import { AgentsPage } from "./pages/Agents.js";
 import { TournamentsPage } from "./pages/Tournaments.js";
 import { GameView } from "./pages/GameView.js";
 import { RefereePage } from "./pages/Referee.js";
-import { Logo, ProtocolDialog, RulesDialog, ToastHost } from "./components.js";
+import { LoginPage } from "./pages/Login.js";
+import { Logo, ProtocolDialog, RulesDialog, ToastHost, toast } from "./components.js";
+import { logout, restore, useAuth } from "./auth.js";
 import "./styles.css";
+
+let restored = false;
 
 function EngineStatus() {
   const [mode, setMode] = useState<string | null>(null);
@@ -23,6 +27,30 @@ function EngineStatus() {
     <span className={`tag ${mode ? "st-ok" : "st-pending"}`}>
       <span className="dot" />
       引擎在线 · 裁判 {mode ?? "…"}
+    </span>
+  );
+}
+
+function UserArea() {
+  const user = useAuth();
+  if (!user) return null;
+  return (
+    <span className="row" style={{ gap: 10 }}>
+      <span className={`tag ${user.role === "admin" ? "st-warn" : "st-ok"}`}>
+        {user.role === "admin" ? "管理员" : "选手"}
+      </span>
+      <span className="num" style={{ fontSize: 13 }}>
+        {user.username}
+      </span>
+      <button
+        className="btn btn-ghost btn-sm"
+        onClick={() => {
+          logout();
+          toast("已退出登录");
+        }}
+      >
+        登出
+      </button>
     </span>
   );
 }
@@ -53,9 +81,31 @@ function Tabs() {
   );
 }
 
-export function App() {
+function Shell() {
+  const user = useAuth();
+  const loc = useLocation();
+  const [booting, setBooting] = useState(!restored);
+
+  useEffect(() => {
+    if (!restored) {
+      restored = true;
+      void restore().finally(() => setBooting(false));
+    } else {
+      setBooting(false);
+    }
+  }, []);
+
+  if (booting) return <main />;
+  if (!user) {
+    return (
+      <Routes>
+        <Route path="*" element={<LoginPage />} />
+      </Routes>
+    );
+  }
+  void loc;
   return (
-    <Router>
+    <>
       <header className="topnav">
         <div className="container topnav-inner">
           <NavLink to="/" className="logo">
@@ -63,7 +113,7 @@ export function App() {
             狼人杀 · Agent 锦标赛
           </NavLink>
           <Tabs />
-          <EngineStatus />
+          <UserArea />
         </div>
       </header>
 
@@ -92,7 +142,14 @@ export function App() {
           </span>
         </div>
       </footer>
+    </>
+  );
+}
 
+export function App() {
+  return (
+    <Router>
+      <Shell />
       <ToastHost />
     </Router>
   );
