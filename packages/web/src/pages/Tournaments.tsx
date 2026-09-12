@@ -21,7 +21,6 @@ export function TournamentsPage() {
   const [board, setBoard] = useState<LeaderRow[]>([]);
 
   // 创建表单
-  const [name, setName] = useState("");
   const [gamesPer, setGamesPer] = useState(2);
   const [rounds, setRounds] = useState(1);
   const [picked, setPicked] = useState<Record<string, boolean>>({});
@@ -70,9 +69,8 @@ export function TournamentsPage() {
     try {
       const r =
         kindSel === "official"
-          ? await api.createTournament({ name: name.trim(), kind: "official", officialRounds: rounds })
+          ? await api.createTournament({ kind: "official", officialRounds: rounds })
           : await api.createTournament({
-              name: name.trim(),
               kind: "training",
               agentIds: Object.keys(picked).filter((k) => picked[k]),
               gamesPerAgent: gamesPer,
@@ -84,7 +82,6 @@ export function TournamentsPage() {
           ? `正式比赛已创建 · 全员参与 · ${rounds} 轮`
           : `训练赛已创建 · 选好对手即可开赛`,
       );
-      setName("");
       setPicked({});
       refreshList();
       navigate(`/tournaments/${r.id}`);
@@ -147,17 +144,9 @@ export function TournamentsPage() {
             <div className="card">
               <h2 className="panel-title">创建{KIND_TXT[kindSel]}</h2>
               <div className="stack" style={{ gap: 16 }}>
-                <div className="field">
-                  <label htmlFor="t-name">名称（可选）</label>
-                  <input
-                    className="input"
-                    id="t-name"
-                    type="text"
-                    placeholder={kindSel === "official" ? "留空自动：你的用户名 · 时间" : "留空自动：你的用户名 · 时间"}
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                  />
-                </div>
+                <p className="meta" style={{ fontSize: 12 }}>
+                  比赛名将自动生成：你的用户名 · 类型 · 时间
+                </p>
 
                 {kindSel === "official" ? (
                   <>

@@ -79,7 +79,7 @@ export const api = {
 
   listTournaments: () => req("/api/tournaments").then((r: Response) => j<TournamentRow[]>(r)),
   createTournament: (body: {
-    name: string;
+    name?: string;
     kind: "training" | "official";
     agentIds?: string[];
     gamesPerAgent?: number;
