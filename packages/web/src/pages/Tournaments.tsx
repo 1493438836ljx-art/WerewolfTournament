@@ -61,10 +61,6 @@ export function TournamentsPage() {
   }, [tours]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const create = async () => {
-    if (!name.trim()) {
-      setErr("名称必填");
-      return;
-    }
     if (kindSel === "training" && Object.values(picked).filter(Boolean).length === 0) {
       setErr("训练赛需要选择至少 1 个 agent");
       return;
@@ -85,8 +81,8 @@ export function TournamentsPage() {
       void total;
       toast(
         kindSel === "official"
-          ? `已创建正式比赛「${name.trim()}」· 全员参与 · ${rounds} 轮（每轮每人上场一次）`
-          : `已创建训练赛「${name.trim()}」· draft 状态`,
+          ? `正式比赛已创建 · 全员参与 · ${rounds} 轮`
+          : `训练赛已创建 · 选好对手即可开赛`,
       );
       setName("");
       setPicked({});
@@ -152,12 +148,12 @@ export function TournamentsPage() {
               <h2 className="panel-title">创建{KIND_TXT[kindSel]}</h2>
               <div className="stack" style={{ gap: 16 }}>
                 <div className="field">
-                  <label htmlFor="t-name">名称</label>
+                  <label htmlFor="t-name">名称（可选）</label>
                   <input
                     className="input"
                     id="t-name"
                     type="text"
-                    placeholder={kindSel === "official" ? "例如：正式赛 · 第一赛季" : "例如：周末排位 · 0912"}
+                    placeholder={kindSel === "official" ? "留空自动：你的用户名 · 时间" : "留空自动：你的用户名 · 时间"}
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                   />

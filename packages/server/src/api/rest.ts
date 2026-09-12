@@ -124,11 +124,14 @@ export function registerRest(app: FastifyInstance, gameService: GameService, opt
       maxConcurrentGames?: number;
     };
     const kind = body.kind === "official" ? "official" : "training";
-    const user = req.user as { id: string; role: string };
+    const user = req.user as { id: string; username: string; role: string };
     if (kind === "official" && user.role !== "admin") {
       return reply.code(403).send({ error: "正式比赛由管理员编排" });
     }
-    if (!body.name) return reply.code(400).send({ error: "name 必填" });
+    // 名称可选：留空自动命名（发起人 + 类型 + 时间）
+    const now = new Date();
+    const ts = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    const name = body.name?.trim() || `${user.username}的${kind === "official" ? "正式赛" : "训练赛"} · ${ts}`;
     if (kind === "training" && (!Array.isArray(body.agentIds) || body.agentIds.length < 1)) {
       return reply.code(400).send({ error: "训练赛需要选择参赛 agent" });
     }
@@ -142,7 +145,7 @@ export function registerRest(app: FastifyInstance, gameService: GameService, opt
     }
     try {
       const id = await gameService.createTournament({
-        name: body.name,
+        name,
         kind,
         creatorId: user.id,
         agentIds: body.agentIds ?? [],
