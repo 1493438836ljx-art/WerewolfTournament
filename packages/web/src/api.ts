@@ -82,7 +82,6 @@ export const api = {
     name?: string;
     kind: "training" | "official";
     agentIds?: string[];
-    gamesPerAgent?: number;
     officialRounds?: number;
   }) =>
     req("/api/tournaments", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then((r: Response) => j<{ id: string }>(r)),

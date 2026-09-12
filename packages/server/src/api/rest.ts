@@ -132,8 +132,12 @@ export function registerRest(app: FastifyInstance, gameService: GameService, opt
     const now = new Date();
     const ts = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
     const name = body.name?.trim() || `${user.username}的${kind === "official" ? "正式赛" : "训练赛"} · ${ts}`;
-    if (kind === "training" && (!Array.isArray(body.agentIds) || body.agentIds.length < 1)) {
-      return reply.code(400).send({ error: "训练赛需要选择参赛 agent" });
+    if (
+      kind === "training" &&
+      (!Array.isArray(body.agentIds) || new Set(body.agentIds).size !== 9)
+    ) {
+      const n = Array.isArray(body.agentIds) ? new Set(body.agentIds).size : 0;
+      return reply.code(400).send({ error: `训练赛需要恰好选择 9 个不同的 agent（当前 ${n} 个）` });
     }
     // 选手发起训练赛：所选 agent 中至少一个是自己的提交（约战制）
     if (kind === "training" && user.role !== "admin") {
@@ -149,7 +153,6 @@ export function registerRest(app: FastifyInstance, gameService: GameService, opt
         kind,
         creatorId: user.id,
         agentIds: body.agentIds ?? [],
-        gamesPerAgent: body.gamesPerAgent ?? 2,
         officialRounds: body.officialRounds ?? 1,
         maxConcurrentGames: body.maxConcurrentGames ?? 1,
       });

@@ -21,7 +21,6 @@ export function TournamentsPage() {
   const [board, setBoard] = useState<LeaderRow[]>([]);
 
   // 创建表单
-  const [gamesPer, setGamesPer] = useState(2);
   const [rounds, setRounds] = useState(1);
   const [picked, setPicked] = useState<Record<string, boolean>>({});
   const [err, setErr] = useState("");
@@ -60,8 +59,9 @@ export function TournamentsPage() {
   }, [tours]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const create = async () => {
-    if (kindSel === "training" && Object.values(picked).filter(Boolean).length === 0) {
-      setErr("训练赛需要选择至少 1 个 agent");
+    const pickedCount = Object.values(picked).filter(Boolean).length;
+    if (kindSel === "training" && pickedCount !== 9) {
+      setErr(`须恰好选择 9 个不同的 agent（已选 ${pickedCount} 个）`);
       return;
     }
     setErr("");
@@ -73,7 +73,6 @@ export function TournamentsPage() {
           : await api.createTournament({
               kind: "training",
               agentIds: Object.keys(picked).filter((k) => picked[k]),
-              gamesPerAgent: gamesPer,
             });
       const total = selected;
       void total;
@@ -171,20 +170,9 @@ export function TournamentsPage() {
                 ) : (
                   <>
                     <div className="field">
-                      <label htmlFor="t-games">每个 agent 局数（1–20）</label>
-                      <input
-                        className="input num"
-                        id="t-games"
-                        type="number"
-                        min={1}
-                        max={20}
-                        value={gamesPer}
-                        onChange={(e) => setGamesPer(Math.max(1, Math.min(20, Number(e.target.value) || 2)))}
-                        style={{ width: 120 }}
-                      />
-                    </div>
-                    <div className="field">
-                      <label>参赛 agent</label>
+                      <label>
+                        参赛 agent（{Object.values(picked).filter(Boolean).length}/9，须选满 9 个不同的 agent）
+                      </label>
                       <div className="chips">
                         {agents.map((a) => (
                           <label key={a.id} className="chip">
@@ -201,15 +189,19 @@ export function TournamentsPage() {
                     </div>
                     <p className="meta" style={{ fontSize: 12 }}>
                       {isAdmin
-                        ? "参赛数 < 9 时允许同一 agent 多副本参赛（开发/测试场景）"
-                        : "约战制：至少勾选你自己上传的一个 agent，其余对手任选（含平台 bot）"}
+                        ? "一场训练赛 = 一局，9 个不同 agent 同桌对打"
+                        : "约战制：至少包含你自己上传的一个 agent；其余对手任选（可用平台 bot 凑数）"}
                     </p>
                   </>
                 )}
 
                 {err && <p className="form-error">{err}</p>}
                 <div>
-                  <button className="btn btn-primary" onClick={create} disabled={creating}>
+                  <button
+                    className="btn btn-primary"
+                    onClick={create}
+                    disabled={creating || (kindSel === "training" && Object.values(picked).filter(Boolean).length !== 9)}
+                  >
                     {creating ? "创建中…" : `创建${KIND_TXT[kindSel]}`}
                   </button>
                 </div>

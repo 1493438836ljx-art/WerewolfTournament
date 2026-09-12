@@ -103,8 +103,8 @@ describe("认证与角色", () => {
 
     expect((await app.inject({ method: "GET", url: "/api/agents", headers: P })).statusCode).toBe(200); // 选手可看
     expect(
-      (await app.inject({ method: "POST", url: "/api/tournaments", headers: P, payload: { name: "x", agentIds: ["a"], gamesPerAgent: 1 } })).statusCode,
-    ).toBe(403); // 选手不能开赛
+      (await app.inject({ method: "POST", url: "/api/tournaments", headers: P, payload: { kind: "official" } })).statusCode,
+    ).toBe(403); // 选手不能创建正式比赛
     expect((await app.inject({ method: "POST", url: "/api/agents/scan", headers: P })).statusCode).toBe(403); // 选手不能扫目录
     expect((await app.inject({ method: "POST", url: "/api/agents/scan", headers: A })).statusCode).toBe(200); // 管理员可扫
     expect(

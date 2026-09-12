@@ -43,6 +43,19 @@ export function planTournament(opts: {
   return assignments;
 }
 
+/** 训练赛编排：一场 = 一局。要求恰好 seatCount 个不同 agent，随机分配座位。 */
+export function planSingleGame(agentIds: string[], seatCount = 9): GameAssignment[] {
+  if (new Set(agentIds).size !== seatCount) {
+    throw new Error(`训练赛需要恰好 ${seatCount} 个不同的 agent`);
+  }
+  const seed = randomBytes(12).toString("hex");
+  const shuffled = [...agentIds];
+  seededShuffle(shuffled, seed);
+  const seats = new Map<Seat, string>();
+  for (let i = 0; i < seatCount; i++) seats.set((i + 1) as Seat, shuffled[i]!);
+  return [{ seq: 1, gameId: `game-${seed.slice(0, 10)}`, seed, seats }];
+}
+
 /**
  * 正式比赛编排：全员参与、轮流上场。
  * - 每轮（round）：全部 agent 随机洗牌后按 seatCount 切组对局（每局组合不同）

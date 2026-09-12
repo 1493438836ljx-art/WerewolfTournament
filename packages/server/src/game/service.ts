@@ -10,7 +10,7 @@ import { sandboxFor, type SandboxMode } from "../agents/sandbox.js";
 import { EventBus } from "./bus.js";
 import { Orchestrator, type GameResult, type PlayerSpec } from "./orchestrator.js";
 import { createGameRecord, dbSinks } from "./recorder.js";
-import { planOfficial, planTournament } from "../tournament/scheduler.js";
+import { planOfficial, planSingleGame } from "../tournament/scheduler.js";
 import { scoreSeat } from "../tournament/scoring.js";
 import { getReferee } from "../llmreferee.js";
 
@@ -19,7 +19,6 @@ export interface TournamentConfig {
   kind: "training" | "official";
   creatorId?: string | null;
   agentIds: string[];
-  gamesPerAgent: number;
   /** 正式比赛：每个 agent 上场的轮数（每轮全员参与） */
   officialRounds: number;
   maxConcurrentGames: number;
@@ -49,10 +48,16 @@ export class GameService {
       agentIds = (await db.select({ id: agents.id }).from(agents)).map((r) => r.id);
       if (agentIds.length < 2) throw new Error("正式比赛至少需要 2 个已注册 agent");
     }
+    if (cfg.kind === "training") {
+      // 训练赛：一场 = 一局，必须恰好 9 个不同 agent
+      if (new Set(agentIds).size !== 9) {
+        throw new Error(`训练赛需要恰好选择 9 个不同的 agent（当前 ${new Set(agentIds).size} 个）`);
+      }
+    }
     const plan =
       cfg.kind === "official"
         ? planOfficial({ agentIds, rounds: cfg.officialRounds })
-        : planTournament({ agentIds, gamesPerAgent: cfg.gamesPerAgent });
+        : planSingleGame(agentIds);
     await db.insert(tournaments).values({
       id,
       name: cfg.name,
