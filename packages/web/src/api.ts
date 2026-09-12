@@ -74,7 +74,7 @@ export const api = {
   uploadAgent: (file: File) => {
     const form = new FormData();
     form.append("file", file);
-    return req("/api/agents/upload", { method: "POST", body: form }).then((r: Response) => j<{ id: string; name: string }>(r));
+    return req("/api/agents/upload", { method: "POST", body: form }).then((r: Response) => j<{ id: string; name: string; updated: boolean }>(r));
   },
 
   listTournaments: () => req("/api/tournaments").then((r: Response) => j<TournamentRow[]>(r)),

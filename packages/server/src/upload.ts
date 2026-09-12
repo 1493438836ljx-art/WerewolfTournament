@@ -82,27 +82,37 @@ export function registerUploadRoute(app: FastifyInstance, opts: { uploadsRoot: s
           JSON.stringify({ owner: user.username, uploadedAt: new Date().toISOString() }, null, 2),
         );
 
-        // 注册（同名覆盖更新）
+        // 一人一份作品：重复上传覆盖已有提交（无论新包名是否相同）
         const { eq } = await import("drizzle-orm");
-        const existing = await db.select().from(agents).where(eq(agents.dir, destDir)).limit(1);
-        let id: string;
-        if (existing.length) {
-          id = existing[0]!.id;
+        const mine = await db.select().from(agents).where(eq(agents.ownerId, user.id)).limit(2);
+        if (mine.length > 1) {
+          // 历史数据可能一人多条：保留最新一条，其余连同目录删除
+          const keep = mine[0]!;
+          for (const old of mine.slice(1)) {
+            await rm(old.dir, { recursive: true, force: true }).catch(() => {});
+            await db.delete(agents).where(eq(agents.id, old.id));
+          }
+          void keep;
+        }
+        if (mine.length > 0) {
+          const old = mine[0]!;
+          // 名字变了则迁移目录；同名时 destDir 已被清空重建
+          if (old.dir !== destDir) await rm(old.dir, { recursive: true, force: true }).catch(() => {});
           await db
             .update(agents)
-            .set({ name: loaded.manifest.name, manifestJson: loaded.manifest, selfcheckStatus: "pending", ownerId: user.id })
-            .where(eq(agents.id, id));
-        } else {
-          id = `agent-${randomUUID().slice(0, 8)}`;
-          await db.insert(agents).values({
-            id,
-            name: loaded.manifest.name,
-            dir: destDir,
-            manifestJson: loaded.manifest,
-            ownerId: user.id,
-          });
+            .set({ name: loaded.manifest.name, dir: destDir, manifestJson: loaded.manifest, selfcheckStatus: "pending" })
+            .where(eq(agents.id, old.id));
+          return reply.code(201).send({ id: old.id, name: loaded.manifest.name, dir: destDir, updated: true });
         }
-        return reply.code(201).send({ id, name: loaded.manifest.name, dir: destDir });
+        const id = `agent-${randomUUID().slice(0, 8)}`;
+        await db.insert(agents).values({
+          id,
+          name: loaded.manifest.name,
+          dir: destDir,
+          manifestJson: loaded.manifest,
+          ownerId: user.id,
+        });
+        return reply.code(201).send({ id, name: loaded.manifest.name, dir: destDir, updated: false });
       } catch (e) {
         return reply.code(400).send({ error: `上传包无效: ${e instanceof Error ? e.message : e}` });
       } finally {

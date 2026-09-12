@@ -25,7 +25,7 @@ export function AgentsPage() {
     setUploading(true);
     try {
       const r = await api.uploadAgent(f);
-      toast(`上传成功：${r.name} · 已注册，建议立即自检`);
+      toast(r.updated ? `已覆盖你之前的提交：${r.name} · 建议重新自检` : `上传成功：${r.name} · 建议立即自检`);
       refresh();
     } catch (e) {
       toast(`上传失败: ${e instanceof Error ? e.message : e}`);

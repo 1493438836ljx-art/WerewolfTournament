@@ -2,7 +2,7 @@ import json,sys,random
 def send(m): print(json.dumps(m), flush=True)
 for line in sys.stdin:
     msg=json.loads(line); t=msg["type"]; rid=msg["msg_id"]
-    if t=="hello": send({"v":1,"in_reply_to":rid,"type":"ready","agent_name":"my-upload-bot"})
+    if t=="hello": send({"v":1,"in_reply_to":rid,"type":"ready","agent_name":"my-bot-v2"})
     elif t in ("day_speech_request","pk_speech_request"): send({"v":1,"in_reply_to":rid,"type":"speech","text":"上传的bot，过"})
     elif t=="vote_request": send({"v":1,"in_reply_to":rid,"type":"vote","target":random.choice(msg["candidates"])})
     elif t=="last_words_request": send({"v":1,"in_reply_to":rid,"type":"last_words","text":"GG"})
