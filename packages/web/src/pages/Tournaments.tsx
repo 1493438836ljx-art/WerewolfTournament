@@ -107,6 +107,128 @@ export function TournamentsPage() {
   const doneGames = selected?.games.filter((g) => g.status === "done").length ?? 0;
   const totalGames = selected?.games.length ?? 0;
 
+  // ─── 详情视图：选中某场比赛时全宽展示（创建表单不占屏） ───
+  if (selectedId && selected) {
+    const t = selected.tournament;
+    const canCtrl = isAdmin || t.createdBy === user?.id;
+    return (
+      <section className="section screen-pad">
+        <div className="container">
+          <div className="screen-head row-between" style={{ alignItems: "flex-end", flexWrap: "wrap", gap: 16 }}>
+            <div>
+              <button className="btn btn-ghost btn-sm" onClick={() => navigate("/tournaments")}>
+                ← 返回列表
+              </button>
+              <h1 className="screen-title" style={{ marginTop: 10 }}>
+                {t.name}
+              </h1>
+              <p className="lead">
+                {KIND_TXT[(t.kind as Kind) ?? "training"]} · 对局 {doneGames}/{totalGames} · 座位与角色由种子随机决定
+              </p>
+            </div>
+            <div className="row" style={{ gap: 10 }}>
+              <span className={`tag ${t.kind === "official" ? "st-warn" : "st-pending"}`}>
+                {KIND_TXT[(t.kind as Kind) ?? "training"] ?? "训练赛"}
+              </span>
+              <StatusTag status={t.status} />
+              {canCtrl && t.status === "running" && (
+                <button className="btn btn-secondary btn-sm" onClick={() => abort(t)}>
+                  {abortConfirm === t.id ? "确认中止？" : "中止"}
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="grid-2" style={{ alignItems: "start" }}>
+            <div className="card">
+              <h2 className="panel-title">对局</h2>
+              <div className="table-wrap">
+                <table className="ds-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>状态</th>
+                      <th>胜方</th>
+                      <th>观战</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selected.games.map((g) => (
+                      <tr key={g.id}>
+                        <td className="num">第 {g.seq} 局</td>
+                        <td>
+                          <StatusTag status={g.status} />
+                        </td>
+                        <td>
+                          {g.winnerFaction ? (
+                            <span className={`tag ${g.winnerFaction === "werewolf" ? "role-wolf" : "st-ok"}`}>
+                              {g.winnerFaction === "werewolf" ? "狼人" : "好人"}
+                            </span>
+                          ) : (
+                            <span className="meta">—</span>
+                          )}
+                        </td>
+                        <td>
+                          <Link className="btn btn-ghost btn-sm btn-arrow" to={`/games/${g.id}`}>
+                            {g.status === "running" ? "实时观战" : g.status === "done" ? "观战回放" : "待开始"}
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="card">
+              <h2 className="panel-title">积分榜</h2>
+              {board.length === 0 ? (
+                <p className="empty-hint">对局完成后生成积分</p>
+              ) : (
+                <>
+                  <div className="table-wrap">
+                    <table className="ds-table">
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          <th>Agent</th>
+                          <th className="num-col">积分</th>
+                          <th className="num-col">胜/场</th>
+                          <th className="num-col">MVP</th>
+                          <th className="num-col">超时</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {board.map((r, i) => (
+                          <tr key={r.agentId}>
+                            <td className="num">{i + 1}</td>
+                            <td className="num">{r.name}</td>
+                            <td className="num-col">
+                              <strong>{r.points}</strong>
+                            </td>
+                            <td className="num-col">
+                              {r.wins}/{r.games}
+                            </td>
+                            <td className="num-col">{r.mvps}</td>
+                            <td className="num-col">{r.timeouts}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="meta divider-note">
+                    积分规则：胜方 +3 · MVP +1 · 超时 −0.1/次（每局上限 −1）· 取消资格该局 0 分且 −2
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  // ─── 列表视图 ───
   return (
     <section className="section screen-pad">
       <div className="container">
@@ -251,111 +373,6 @@ export function TournamentsPage() {
                   </tbody>
                 </table>
               </div>
-            </div>
-
-            <div className="card">
-              <div className="row-between" style={{ marginBottom: 12 }}>
-                <h2 className="panel-title" style={{ margin: 0 }}>
-                  {selected ? `${selected.tournament.name} · 对局与积分` : "对局与积分"}
-                  {selected && totalGames > 0 && (
-                    <span className="meta" style={{ marginLeft: 10 }}>
-                      {doneGames}/{totalGames}
-                    </span>
-                  )}
-                </h2>
-                {selected && (
-                  <span className="row" style={{ gap: 8 }}>
-                    <span className={`tag ${selected.tournament.kind === "official" ? "st-warn" : "st-pending"}`}>
-                      {KIND_TXT[(selected.tournament.kind as Kind) ?? "training"] ?? "训练赛"}
-                    </span>
-                    <StatusTag status={selected.tournament.status} />
-                  </span>
-                )}
-              </div>
-
-              {selected ? (
-                <>
-                  <div className="table-wrap">
-                    <table className="ds-table">
-                      <thead>
-                        <tr>
-                          <th>#</th>
-                          <th>状态</th>
-                          <th>胜方</th>
-                          <th>操作</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {selected.games.map((g) => (
-                          <tr key={g.id}>
-                            <td className="num">第 {g.seq} 局</td>
-                            <td>
-                              <StatusTag status={g.status} />
-                            </td>
-                            <td>
-                              {g.winnerFaction ? (
-                                <span className={`tag ${g.winnerFaction === "werewolf" ? "role-wolf" : "st-ok"}`}>
-                                  {g.winnerFaction === "werewolf" ? "狼人" : "好人"}
-                                </span>
-                              ) : (
-                                <span className="meta">—</span>
-                              )}
-                            </td>
-                            <td>
-                              <Link className="btn btn-ghost btn-sm btn-arrow" to={`/games/${g.id}`}>
-                                {g.status === "running" ? "实时观战" : "观战回放"}
-                              </Link>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {board.length > 0 && (
-                    <>
-                      <h2 className="panel-title" style={{ margin: "20px 0 12px" }}>
-                        积分榜
-                      </h2>
-                      <div className="table-wrap">
-                        <table className="ds-table">
-                          <thead>
-                            <tr>
-                              <th>#</th>
-                              <th>Agent</th>
-                              <th className="num-col">积分</th>
-                              <th className="num-col">胜/场</th>
-                              <th className="num-col">MVP</th>
-                              <th className="num-col">超时</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {board.map((r, i) => (
-                              <tr key={r.agentId}>
-                                <td className="num">{i + 1}</td>
-                                <td className="num">{r.name}</td>
-                                <td className="num-col">
-                                  <strong>{r.points}</strong>
-                                </td>
-                                <td className="num-col">
-                                  {r.wins}/{r.games}
-                                </td>
-                                <td className="num-col">{r.mvps}</td>
-                                <td className="num-col">{r.timeouts}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                      <p className="meta divider-note">
-                        积分规则：胜方 +3 · MVP +1 · 超时 −0.1/次（每局上限 −1）· 取消资格该局 0 分且 −2
-                      </p>
-                    </>
-                  )}
-                </>
-              ) : (
-                <p className="empty-hint">从上方列表选择一场比赛查看对局与积分</p>
-              )}
             </div>
           </div>
         </div>
