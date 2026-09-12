@@ -36,6 +36,13 @@
       "when": 1789227230612,
       "tag": "0004_good_the_anarchist",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789229896720,
+      "tag": "0005_stale_shape",
+      "breakpoints": true
     }
   ]
 }

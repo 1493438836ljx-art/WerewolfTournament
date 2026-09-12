@@ -83,6 +83,7 @@ export const api = {
     kind: "training" | "official";
     agentIds?: string[];
     officialRounds?: number;
+    maxConcurrentGames?: number;
   }) =>
     req("/api/tournaments", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then((r: Response) => j<{ id: string }>(r)),
   tournament: (id: string) =>
@@ -105,4 +106,8 @@ export const api = {
   setRefereeMode: (mode: string) =>
     req("/api/admin/referee/mode", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode }) }).then((r: Response) => j<unknown>(r)),
   refereeCalls: () => req("/api/referee/calls").then((r: Response) => j<Array<{ id: number; purpose: string; model: string; tokens: number; ok: boolean; latencyMs: number; createdAt: string }>>(r)),
+  adminSettings: () =>
+    req("/api/admin/settings").then((r: Response) => j<{ maxConcurrentGames: number; activeGames: number; waitingGames: number }>(r)),
+  setMaxConcurrentGames: (n: number) =>
+    req("/api/admin/settings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ maxConcurrentGames: n }) }).then((r: Response) => j<unknown>(r)),
 };

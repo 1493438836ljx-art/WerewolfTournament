@@ -13,6 +13,7 @@ import { createGameRecord, dbSinks } from "./recorder.js";
 import { planOfficial, planSingleGame } from "../tournament/scheduler.js";
 import { scoreSeat } from "../tournament/scoring.js";
 import { getReferee } from "../llmreferee.js";
+import { DEFAULT_MAX_CONCURRENT_GAMES, GameSlots, KEY_MAX_CONCURRENT_GAMES, getSetting, setSetting } from "../settings.js";
 
 export interface TournamentConfig {
   name: string;
@@ -27,6 +28,23 @@ export interface TournamentConfig {
 export class GameService {
   private runningGames = new Set<string>();
   private aborting = new Set<string>();
+  /** 全局并发对局信号量（所有比赛共享，上限可在运行时调整） */
+  readonly slots = new GameSlots(DEFAULT_MAX_CONCURRENT_GAMES);
+  private slotsLoaded = false;
+
+  /** 启动时从 settings 恢复全局并发上限（幂等） */
+  async loadSettings(): Promise<void> {
+    if (this.slotsLoaded) return;
+    this.slotsLoaded = true;
+    const n = await getSetting(KEY_MAX_CONCURRENT_GAMES, DEFAULT_MAX_CONCURRENT_GAMES);
+    this.slots.setLimit(n);
+  }
+
+  /** 管理端调整全局并发上限（即时生效并持久化） */
+  async setMaxConcurrentGames(n: number): Promise<void> {
+    this.slots.setLimit(n);
+    await setSetting(KEY_MAX_CONCURRENT_GAMES, n);
+  }
 
   constructor(
     private readonly bus: EventBus,
@@ -117,6 +135,7 @@ export class GameService {
   async runOne(tournamentId: string | null, gameId: string, seq: number, seed: string, seatMap: Record<string, string>): Promise<GameResult> {
     if (this.runningGames.has(gameId)) throw new Error("该对局已在运行");
     this.runningGames.add(gameId);
+    await this.slots.acquire(); // 全局并发上限：超限的局排队等待
     try {
       const players: PlayerSpec[] = [];
       for (const [seatStr, agentId] of Object.entries(seatMap)) {
@@ -171,6 +190,7 @@ export class GameService {
       });
       return result;
     } finally {
+      this.slots.release();
       this.runningGames.delete(gameId);
     }
   }

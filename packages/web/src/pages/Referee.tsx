@@ -32,20 +32,44 @@ const PURPOSE_TXT: Record<string, string> = {
   agent_proxy: "选手决策（代理）",
 };
 
+interface RuntimeSettings {
+  maxConcurrentGames: number;
+  activeGames: number;
+  waitingGames: number;
+}
+
 export function RefereePage() {
   const isAdmin = useAuth()?.role === "admin";
   const [h, setH] = useState<Health | null>(null);
   const [calls, setCalls] = useState<CallRow[]>([]);
+  const [rt, setRt] = useState<RuntimeSettings | null>(null);
+  const [slotInput, setSlotInput] = useState<number>(3);
 
   const refresh = useCallback(() => {
     api.refereeHealth().then(setH).catch(() => {});
     api.refereeCalls().then(setCalls).catch(() => {});
-  }, []);
+    if (isAdmin) {
+      api.adminSettings().then((s) => {
+        setRt(s);
+        setSlotInput(s.maxConcurrentGames);
+      }).catch(() => {});
+    }
+  }, [isAdmin]);
   useEffect(() => {
     refresh();
     const t = setInterval(refresh, 5000);
     return () => clearInterval(t);
   }, [refresh]);
+
+  const applySlots = async () => {
+    try {
+      await api.setMaxConcurrentGames(slotInput);
+      toast(`全局并发上限已设为 ${slotInput} · 即时生效`);
+      refresh();
+    } catch (e) {
+      toast(`设置失败: ${e instanceof Error ? e.message : e}`);
+    }
+  };
 
   const setMode = async (mode: string) => {
     await api.setRefereeMode(mode).catch(() => {});
@@ -115,6 +139,40 @@ export function RefereePage() {
             </div>
           </div>
         </div>
+
+        {isAdmin && (
+          <div className="card" style={{ marginTop: 20 }}>
+            <div className="row-between" style={{ marginBottom: 12 }}>
+              <h2 className="panel-title" style={{ margin: 0 }}>运行配置 · 并发规模</h2>
+              {rt && (
+                <span className="meta">
+                  进行中 {rt.activeGames} · 排队 {rt.waitingGames} · 上限 {rt.maxConcurrentGames}
+                </span>
+              )}
+            </div>
+            <div className="row" style={{ gap: 12 }}>
+              <label className="meta" style={{ fontSize: 12 }}>
+                全局最大并发对局数（1–50）
+                <input
+                  className="input num"
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={slotInput}
+                  onChange={(e) => setSlotInput(Math.max(1, Math.min(50, Number(e.target.value) || 3)))}
+                  style={{ width: 100, marginLeft: 8 }}
+                />
+              </label>
+              <button className="btn btn-primary btn-sm" onClick={applySlots}>
+                应用
+              </button>
+            </div>
+            <p className="meta" style={{ fontSize: 12, marginTop: 10, whiteSpace: "normal" }}>
+              所有比赛共享的全局对局并发上限：超出的对局自动排队等待，调整即时生效并持久化。
+              每局占用 9 个 agent 容器（约 2-4GB 内存），请按宿主机资源设置（如 8GB Docker 建议不超过 3）。
+            </p>
+          </div>
+        )}
 
         <div className="card" style={{ marginTop: 20 }}>
           <h2 className="panel-title">最近 LLM 调用</h2>

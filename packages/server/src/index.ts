@@ -65,6 +65,7 @@ if (sandbox === "docker") {
   }
 }
 
+await gameService.loadSettings();
 registerRest(app, gameService, { agentsRoot, sandbox });
 registerUploadRoute(app, { uploadsRoot: path.join(agentsRoot, "uploads") });
 registerWs(app, bus, {

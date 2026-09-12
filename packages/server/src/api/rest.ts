@@ -218,6 +218,26 @@ export function registerRest(app: FastifyInstance, gameService: GameService, opt
     }));
   });
 
+  // ---------- 运行配置（管理员） ----------
+  app.get("/api/admin/settings", { preHandler: requireAuth("admin") }, async () => {
+    return {
+      maxConcurrentGames: gameService.slots.current.limit,
+      activeGames: gameService.slots.current.active,
+      waitingGames: gameService.slots.current.waiting,
+    };
+  });
+
+  app.post("/api/admin/settings", { preHandler: requireAuth("admin") }, async (req) => {
+    const body = (req.body ?? {}) as { maxConcurrentGames?: number };
+    const n = Number(body.maxConcurrentGames);
+    if (!Number.isInteger(n) || n < 1 || n > 50) {
+      return { error: "maxConcurrentGames 须为 1-50 的整数" };
+    }
+    await gameService.setMaxConcurrentGames(n);
+    app.log.info(`全局并发上限调整为 ${n}`);
+    return { maxConcurrentGames: n, ...gameService.slots.current };
+  });
+
   app.post("/api/admin/referee/mode", { preHandler: requireAuth("admin") }, async (req) => {
     const body = (req.body ?? {}) as { mode?: RefereeMode };
     if (!body.mode) return { error: "mode 必填" };

@@ -23,6 +23,7 @@ export function TournamentsPage() {
 
   // 创建表单
   const [rounds, setRounds] = useState(1);
+  const [concurrency, setConcurrency] = useState(1);
   const [picked, setPicked] = useState<Record<string, boolean>>({});
   const [err, setErr] = useState("");
   const [creating, setCreating] = useState(false);
@@ -78,7 +79,7 @@ export function TournamentsPage() {
     try {
       const r =
         kindSel === "official"
-          ? await api.createTournament({ kind: "official", officialRounds: rounds })
+          ? await api.createTournament({ kind: "official", officialRounds: rounds, maxConcurrentGames: concurrency })
           : await api.createTournament({
               kind: "training",
               agentIds: Object.keys(picked).filter((k) => picked[k]),
@@ -289,6 +290,19 @@ export function TournamentsPage() {
                         max={10}
                         value={rounds}
                         onChange={(e) => setRounds(Math.max(1, Math.min(10, Number(e.target.value) || 1)))}
+                        style={{ width: 120 }}
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="t-conc">本场并发对局数（1–10）</label>
+                      <input
+                        className="input num"
+                        id="t-conc"
+                        type="number"
+                        min={1}
+                        max={10}
+                        value={concurrency}
+                        onChange={(e) => setConcurrency(Math.max(1, Math.min(10, Number(e.target.value) || 1)))}
                         style={{ width: 120 }}
                       />
                     </div>

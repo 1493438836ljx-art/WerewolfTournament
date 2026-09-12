@@ -20,6 +20,13 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/** 平台运行配置（kv）：全局最大并发对局数等 */
+export const settings = pgTable("settings", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const agents = pgTable("agents", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
