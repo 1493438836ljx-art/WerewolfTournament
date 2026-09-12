@@ -11,6 +11,8 @@ export interface LlmProxyState {
   token: string;
   model?: string;
   dailyTokenBudget: number;
+  /** 配置联动：替换上游客户端 */
+  updateClient?: (next: LLMClientConfig | null) => void;
 }
 
 interface AgentBudget {
@@ -24,7 +26,7 @@ const RPM_LIMIT = 30;
 export function createLlmProxy(app: FastifyInstance, cfg: LLMClientConfig | null): LlmProxyState | null {
   if (!cfg) return null; // 未配置裁判 LLM 则不启用代理（agent 侧自然降级）
 
-  const client = new LLMClient(cfg);
+  let client = new LLMClient(cfg);
   const state: LlmProxyState = {
     url: `/llm`,
     token: randomBytes(16).toString("hex"),
@@ -36,6 +38,11 @@ export function createLlmProxy(app: FastifyInstance, cfg: LLMClientConfig | null
   app.addHook("onReady", () => {
     app.log.info(`LLM 代理已启用：POST /llm/chat/completions（模型 ${state.model}，预算 ${state.dailyTokenBudget}/日）`);
   });
+
+  /** 裁判模型配置更新时联动替换上游客户端（即时生效） */
+  state.updateClient = (next: LLMClientConfig | null) => {
+    if (next) client = new LLMClient(next);
+  };
 
   app.post("/llm/chat/completions", async (req, reply) => {
     const auth = req.headers.authorization;

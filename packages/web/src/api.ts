@@ -114,4 +114,12 @@ export const api = {
     req("/api/admin/settings").then((r: Response) => j<{ maxConcurrentGames: number; activeGames: number; waitingGames: number }>(r)),
   setMaxConcurrentGames: (n: number) =>
     req("/api/admin/settings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ maxConcurrentGames: n }) }).then((r: Response) => j<unknown>(r)),
+  getLlmConfig: () =>
+    req("/api/admin/llm-config").then((r: Response) =>
+      j<{ config: { provider: string; apiKey: string; baseUrl: string; model: string; modelAnnounce: string } | null; apiKeyTail: string; source: string }>(r),
+    ),
+  setLlmConfig: (body: { provider?: string; apiKey?: string; baseUrl?: string; model?: string; modelAnnounce?: string }) =>
+    req("/api/admin/llm-config", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then((r: Response) => j<unknown>(r)),
+  testLlmConnection: () =>
+    req("/api/admin/llm-config/test", { method: "POST" }).then((r: Response) => j<{ ok: boolean; latencyMs: number; detail?: string; model?: string }>(r)),
 };

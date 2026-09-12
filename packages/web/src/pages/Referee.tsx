@@ -44,6 +44,13 @@ export function RefereePage() {
   const [calls, setCalls] = useState<CallRow[]>([]);
   const [rt, setRt] = useState<RuntimeSettings | null>(null);
   const [slotInput, setSlotInput] = useState<number>(3);
+  // 模型对接配置
+  const [llm, setLlm] = useState<{ provider: string; apiKey: string; baseUrl: string; model: string; modelAnnounce: string }>({
+    provider: "anthropic", apiKey: "", baseUrl: "", model: "", modelAnnounce: "",
+  });
+  const [keyTail, setKeyTail] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<string>("");
 
   const refresh = useCallback(() => {
     api.refereeHealth().then(setH).catch(() => {});
@@ -53,8 +60,41 @@ export function RefereePage() {
         setRt(s);
         setSlotInput(s.maxConcurrentGames);
       }).catch(() => {});
+      api.getLlmConfig().then((d) => {
+        if (d.config) setLlm({ ...d.config, apiKey: "" });
+        setKeyTail(d.apiKeyTail);
+      }).catch(() => {});
     }
   }, [isAdmin]);
+
+  const saveLlm = async () => {
+    try {
+      await api.setLlmConfig({
+        provider: llm.provider,
+        ...(llm.apiKey.trim() ? { apiKey: llm.apiKey.trim() } : {}),
+        baseUrl: llm.baseUrl,
+        model: llm.model,
+        modelAnnounce: llm.modelAnnounce,
+      });
+      toast("模型对接配置已保存 · 即时生效（裁判与选手 LLM 代理同步更新）");
+      setTestResult("");
+      refresh();
+    } catch (e) {
+      toast(`保存失败: ${e instanceof Error ? e.message : e}`);
+    }
+  };
+
+  const runTest = async () => {
+    if (testing) return;
+    setTesting(true);
+    setTestResult("测试中…");
+    try {
+      const r = await api.testLlmConnection();
+      setTestResult(r.ok ? `✅ 连通 · ${r.model} · ${r.latencyMs}ms` : `❌ 失败：${r.detail ?? "未知错误"}`);
+    } finally {
+      setTesting(false);
+    }
+  };
   useEffect(() => {
     refresh();
     const t = setInterval(refresh, 5000);
@@ -139,6 +179,60 @@ export function RefereePage() {
             </div>
           </div>
         </div>
+
+        {isAdmin && (
+          <div className="card" style={{ marginTop: 20 }}>
+            <div className="row-between" style={{ marginBottom: 12 }}>
+              <h2 className="panel-title" style={{ margin: 0 }}>模型对接配置</h2>
+              {keyTail && <span className="meta">当前 Key 尾号 ····{keyTail}</span>}
+            </div>
+            <div className="stack" style={{ gap: 14 }}>
+              <div className="field">
+                <label>供应商协议</label>
+                <span className="seg" role="group" aria-label="供应商">
+                  {["anthropic", "openai"].map((pv) => (
+                    <button key={pv} className={llm.provider === pv ? "active" : ""} onClick={() => setLlm({ ...llm, provider: pv })}>
+                      {pv === "anthropic" ? "Anthropic 协议" : "OpenAI 兼容"}
+                    </button>
+                  ))}
+                </span>
+              </div>
+              <div className="field">
+                <label>API Key{keyTail ? "（留空 = 保留当前）" : ""}</label>
+                <input
+                  className="input num"
+                  type="password"
+                  placeholder={keyTail ? "········（不修改请留空）" : "sk-…"}
+                  value={llm.apiKey}
+                  onChange={(e) => setLlm({ ...llm, apiKey: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label>Base URL（官方端点留空；兼容端点如 open.bigmodel.cn/api/anthropic）</label>
+                <input className="input num" placeholder="https://…（可选）" value={llm.baseUrl} onChange={(e) => setLlm({ ...llm, baseUrl: e.target.value })} />
+              </div>
+              <div className="row" style={{ gap: 16 }}>
+                <div className="field" style={{ flex: 1 }}>
+                  <label>模型名</label>
+                  <input className="input num" placeholder="glm-5.3 / claude-sonnet-5 / deepseek-chat …" value={llm.model} onChange={(e) => setLlm({ ...llm, model: e.target.value })} />
+                </div>
+                <div className="field" style={{ flex: 1 }}>
+                  <label>公告用便宜模型（可选）</label>
+                  <input className="input num" placeholder="留空复用主模型" value={llm.modelAnnounce} onChange={(e) => setLlm({ ...llm, modelAnnounce: e.target.value })} />
+                </div>
+              </div>
+              <div className="row" style={{ gap: 10 }}>
+                <button className="btn btn-primary btn-sm" onClick={saveLlm}>保存（即时生效）</button>
+                <button className="btn btn-secondary btn-sm" onClick={runTest} disabled={testing}>测试连接</button>
+                {testResult && <span className="meta" style={{ fontSize: 12.5 }}>{testResult}</span>}
+              </div>
+              <p className="meta" style={{ fontSize: 12, whiteSpace: "normal" }}>
+                配置同时驱动：裁判（公告/仲裁/MVP）与选手沙箱内的 LLM 决策代理。保存后无需重启；
+                API Key 只存服务端数据库，页面永不回显。
+              </p>
+            </div>
+          </div>
+        )}
 
         {isAdmin && (
           <div className="card" style={{ marginTop: 20 }}>

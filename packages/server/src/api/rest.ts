@@ -11,7 +11,7 @@ import { selfcheck } from "../agents/selfcheck.js";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { refereeHealth, setRefereeMode, type RefereeMode } from "../llmreferee.js";
+import { apiKeyTail, refereeHealth, safeConfig, setLlmConfig, setRefereeMode, testLlmConnection, type RefereeMode } from "../llmreferee.js";
 import type { GameService } from "../game/service.js";
 import { requireAuth, type AuthUser } from "../auth.js";
 import { users } from "../db/schema.js";
@@ -238,6 +238,28 @@ export function registerRest(app: FastifyInstance, gameService: GameService, opt
       createdAt: r.createdAt,
     }));
   });
+
+  // ---------- 裁判模型对接配置（管理员） ----------
+  app.get("/api/admin/llm-config", { preHandler: requireAuth("admin") }, async () => {
+    return { config: safeConfig(), apiKeyTail: apiKeyTail(), source: safeConfig() ? "settings/env" : "未配置（模板模式）" };
+  });
+
+  app.post("/api/admin/llm-config", { preHandler: requireAuth("admin") }, async (req) => {
+    const body = (req.body ?? {}) as {
+      provider?: "anthropic" | "openai";
+      apiKey?: string;
+      baseUrl?: string;
+      model?: string;
+      modelAnnounce?: string;
+    };
+    if (body.provider && !["anthropic", "openai"].includes(body.provider)) {
+      return { error: "provider 须为 anthropic 或 openai" };
+    }
+    const config = await setLlmConfig(body);
+    return { config, apiKeyTail: apiKeyTail() };
+  });
+
+  app.post("/api/admin/llm-config/test", { preHandler: requireAuth("admin") }, async () => testLlmConnection());
 
   // ---------- 运行配置（管理员） ----------
   app.get("/api/admin/settings", { preHandler: requireAuth("admin") }, async () => {

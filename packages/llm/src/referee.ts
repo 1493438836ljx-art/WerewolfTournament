@@ -57,6 +57,11 @@ export class Referee {
   get mode() {
     return this.deps.mode;
   }
+  /** 运行时替换 LLM 客户端（页面配置模型对接信息后即时生效；null=退回模板模式） */
+  setClient(client: LLMClient | null) {
+    this.deps.client = client;
+    this.breaker = new CircuitBreaker();
+  }
   health() {
     return { mode: this.deps.mode, llmConfigured: this.deps.client !== null, breaker: this.breaker.stats() };
   }

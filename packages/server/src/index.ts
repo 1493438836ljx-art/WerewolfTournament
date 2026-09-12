@@ -11,6 +11,7 @@ import { initReferee } from "./llmreferee.js";
 import { llmConfigFromEnv } from "@wt/llm";
 import { createLlmProxy, proxyForAgent } from "./llmproxy.js";
 import { ensureAdminSeed, registerAuthRoutes } from "./auth.js";
+import { registerLlmConfigListener } from "./llmreferee.js";
 import { registerUploadRoute } from "./upload.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,9 +31,10 @@ const bus = new EventBus();
 const agentsRoot = process.env.WT_AGENTS_ROOT ?? path.resolve(__dirname, "../../../agents");
 const sandbox = (process.env.WT_SANDBOX === "docker" ? "docker" : "none") as "none" | "docker";
 
-initReferee();
+await initReferee();
 // 平台 LLM 代理（配置了裁判 LLM 即启用；agent 沙箱内唯一 LLM 出口）
 const proxy = createLlmProxy(app, llmConfigFromEnv());
+registerLlmConfigListener((cfg) => proxy?.updateClient?.(cfg));
 // docker 沙箱内访问宿主须用 host.docker.internal；none 模式直连本机
 const proxyHost = sandbox === "docker" ? "host.docker.internal" : "127.0.0.1";
 const gameService = new GameService(bus, {
