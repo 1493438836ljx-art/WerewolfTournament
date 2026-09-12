@@ -78,8 +78,8 @@ export function TournamentsPage() {
       void total;
       toast(
         kindSel === "official"
-          ? `正式比赛已创建 · 全员参与 · ${rounds} 轮`
-          : `训练赛已创建 · 选好对手即可开赛`,
+          ? `正式比赛已创建并开赛 · 全员参与 · ${rounds} 轮`
+          : `训练赛已创建并开赛`,
       );
       setPicked({});
       refreshList();
@@ -89,14 +89,6 @@ export function TournamentsPage() {
     } finally {
       setCreating(false);
     }
-  };
-
-  const start = async (t: TournamentRow) => {
-    await api.startTournament(t.id).catch(() => {});
-    refreshList();
-    loadDetail(t.id);
-    toast(`${t.name} 已开始 · 正在生成对局`);
-    navigate(`/tournaments/${t.id}`);
   };
 
   const abort = async (t: TournamentRow) => {
@@ -241,11 +233,6 @@ export function TournamentsPage() {
                           <StatusTag status={t.status} />
                         </td>
                         <td onClick={(e) => e.stopPropagation()}>
-                          {(isAdmin || t.createdBy === user?.id) && t.status === "draft" && (
-                            <button className="btn btn-secondary btn-sm" onClick={() => start(t)}>
-                              开始比赛
-                            </button>
-                          )}
                           {(isAdmin || t.createdBy === user?.id) && t.status === "running" && (
                             <button className="btn btn-secondary btn-sm" onClick={() => abort(t)}>
                               {abortConfirm === t.id ? "确认中止？" : "中止"}

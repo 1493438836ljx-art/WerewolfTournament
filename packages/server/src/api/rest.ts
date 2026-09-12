@@ -156,6 +156,10 @@ export function registerRest(app: FastifyInstance, gameService: GameService, opt
         officialRounds: body.officialRounds ?? 1,
         maxConcurrentGames: body.maxConcurrentGames ?? 1,
       });
+      // 创建即自动开赛（后台执行，失败会广播 game_failed 事件）
+      void gameService.startTournament(id).catch((e) =>
+        app.log.error(e, `tournament ${id} autostart failed`),
+      );
       return reply.code(201).send({ id });
     } catch (e) {
       return reply.code(400).send({ error: e instanceof Error ? e.message : String(e) });
