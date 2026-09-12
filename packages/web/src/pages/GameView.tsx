@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { api, type GameRow } from "../api.js";
 import { useTopic, type BusEvent } from "../ws.js";
 import { CAUSE_NAME, ICONS, ROLE_CLS, ROLE_NAME, toast } from "../components.js";
@@ -78,11 +78,9 @@ interface SeatView {
   death?: { cause: string; turn: number };
 }
 
-export function GameView() {
-  const { id: routeId } = useParams<{ id?: string }>();
-  const navigate = useNavigate();
-
-  const [gameId, setGameId] = useState<string | null>(routeId ?? null);
+/** 可嵌入的对局面板：座位环 + 事件流 + 实时直播/回放控制（详情页与独立路由共用） */
+export function GamePanel({ gameId: fixedId }: { gameId: string }) {
+  const [gameId, setGameId] = useState<string | null>(fixedId);
   const [game, setGame] = useState<GameRow | null>(null);
   const [seats, setSeats] = useState<SeatView[]>([]);
   const [roleMap, setRoleMap] = useState<Record<number, string>>({});
@@ -246,19 +244,19 @@ export function GameView() {
     }
   }, []);
 
-  /* ─── 数据加载 ─── */
+  /* ─── 数据加载（gameId 切换时全量重置） ─── */
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      let gid = routeId ?? null;
+      const gid = fixedId;
       let g: GameRow | null = null;
-      if (!gid) {
-        const games = await api.listGames().catch(() => [] as GameRow[]);
-        if (cancelled) return;
-        const latest = games[games.length - 1];
-        if (!latest) return;
-        gid = latest.id;
-      }
+      setFeed([]);
+      setDeadMap({});
+      setRevealed(false);
+      setSpeaking(null);
+      setPhase({ mode: "over", text: "等待开始", meta: "9 人局 · 屠边" });
+      setPlaying(false);
+      setGIdx(0);
       try {
         const d = await api.game(gid);
         if (cancelled) return;
@@ -299,7 +297,7 @@ export function GameView() {
     return () => {
       cancelled = true;
     };
-  }, [routeId]);
+  }, [fixedId]);
 
   // seats 名称回填（实时模式 snapshot 提供）
   const nameCache = useRef(new Map<string, string>());
@@ -366,169 +364,188 @@ export function GameView() {
   const ringSeats = useMemo(() => seats, [seats]);
 
   return (
-    <section className="section screen-pad">
-      <div className="container">
-        <div className="screen-head">
-          <div className="row-between" style={{ alignItems: "flex-end", flexWrap: "wrap", gap: 20 }}>
-            <div>
-              <p className="eyebrow">SPECTATE · 实时观战 / 事件回放</p>
-              <h1 className="screen-title">{game ? `${gameName(game)} · 第 ${game.seq} 局` : "对局观战"}</h1>
-              <p className="lead">
-                板型 9 人 · 屠边制 · 种子 <span className="num">{game?.id.slice(5, 13) ?? "…"}</span> · 事件流 append-only 入库可审计
-              </p>
-            </div>
-            {isLive ? (
-              <div className="replay-bar">
-                <span className="tag st-warn">
-                  <span className="dot" />
-                  直播中
-                </span>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => navigate(game?.tournamentId ? `/tournaments/${game.tournamentId}` : "/tournaments")}
-                >
-                  ← 返回比赛
+    <div>
+      <div className="row-between" style={{ marginBottom: 12, flexWrap: "wrap", gap: 12 }}>
+        <h2 className="panel-title" style={{ margin: 0 }}>
+          {game ? `第 ${game.seq} 局 · ${isLive ? "直播中" : "回放"}` : "对局面板"}
+          <span className="meta" style={{ marginLeft: 10, fontWeight: 400 }}>
+            板型 9 人 · 屠边制 · 种子 <span className="num">{game?.id.slice(5, 13) ?? "…"}</span>
+          </span>
+        </h2>
+        {isLive ? (
+          <span className="tag st-warn">
+            <span className="dot" />
+            直播中 · 旁观视角仅见公开事件
+          </span>
+        ) : (
+          <span className="progress-note">
+            事件 {gIdx} / {events.length}
+          </span>
+        )}
+      </div>
+
+      <div className="replay-bar" style={{ marginBottom: 12 }}>
+        {!isLive && (
+          <>
+            <button className="btn btn-primary btn-sm" onClick={() => (gIdx >= events.length ? (resetReplay(), setPlaying(true)) : setPlaying(!playing))}>
+              {playing ? ICONS.pause : ICONS.play}
+              <span>{playing ? "暂停" : gIdx >= events.length ? "重播" : "播放"}</span>
+            </button>
+            <button className="btn btn-secondary btn-sm" onClick={step}>
+              单步
+            </button>
+            <span className="seg" role="group" aria-label="回放速度">
+              {[1, 2, 4].map((s) => (
+                <button key={s} data-speed={s} className={speed === s ? "active" : ""} onClick={() => setSpeed(s)}>
+                  {s}×
                 </button>
-              </div>
-            ) : (
-              <div className="replay-bar">
-                <button className="btn btn-primary btn-sm" onClick={() => (gIdx >= events.length ? (resetReplay(), setPlaying(true)) : setPlaying(!playing))}>
-                  {playing ? ICONS.pause : ICONS.play}
-                  <span>{playing ? "暂停" : gIdx >= events.length ? "重播" : "播放"}</span>
-                </button>
-                <button className="btn btn-secondary btn-sm" onClick={step}>
-                  单步
-                </button>
-                <span className="seg" role="group" aria-label="回放速度">
-                  {[1, 2, 4].map((s) => (
-                    <button key={s} data-speed={s} className={speed === s ? "active" : ""} onClick={() => setSpeed(s)}>
-                      {s}×
-                    </button>
-                  ))}
-                </span>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => {
-                    resetReplay();
-                    toast("已重置回放 · 从第 1 夜开始");
-                  }}
-                >
-                  重放
-                </button>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => navigate(game?.tournamentId ? `/tournaments/${game.tournamentId}` : "/tournaments")}
-                >
-                  ← 返回比赛
-                </button>
-              </div>
-            )}
+              ))}
+            </span>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                resetReplay();
+                toast("已重置回放 · 从第 1 夜开始");
+              }}
+            >
+              重放
+            </button>
+          </>
+        )}
+      </div>
+
+      <div className="grid-2">
+        <div>
+          <div className={`phase-strip ${phase.mode}`}>
+            <span className="ph-label">
+              {phaseIcon}
+              <span>{phase.text}</span>
+            </span>
+            <span className="meta">{phase.meta ?? "9 人局 · 屠边"}</span>
           </div>
-          <p className="progress-note" style={{ marginTop: 14 }}>
-            {isLive
-              ? "实时事件流推送中 · 旁观视角仅见公开事件（角色私有信息不广播）"
-              : `事件 ${gIdx} / ${events.length} · 旁观视角仅见公开事件（角色私有信息不广播）`}
-          </p>
-        </div>
 
-        <div className="grid-2">
-          <div>
-            <div className={`phase-strip ${phase.mode}`}>
-              <span className="ph-label">
-                {phaseIcon}
-                <span>{phase.text}</span>
-              </span>
-              <span className="meta">{phase.meta ?? "9 人局 · 屠边"}</span>
-            </div>
-
-            <div className="seat-ring">
-              <div className="ring-hub">
-                <div className="hub-phase">{hubLabel}</div>
-                <div className="hub-alive num">
-                  <span>{aliveCount}</span>
-                  <small> / {seats.length || 9}</small>
-                </div>
+          <div className="seat-ring">
+            <div className="ring-hub">
+              <div className="hub-phase">{hubLabel}</div>
+              <div className="hub-alive num">
+                <span>{aliveCount}</span>
+                <small> / {seats.length || 9}</small>
               </div>
-              {ringSeats.map((s, i) => {
-                const ang = (-90 + i * (360 / (ringSeats.length || 9))) * (Math.PI / 180);
-                const R = 36.5;
-                const dead = deadMap[s.seat];
-                return (
-                  <div
-                    key={s.seat}
-                    className={`seat ${dead ? "dead" : ""} ${speaking === s.seat ? "speaking" : ""}`}
-                    style={{ left: `${50 + R * Math.cos(ang)}%`, top: `${50 + R * Math.sin(ang)}%` }}
-                  >
-                    <div className="no num">{s.seat}</div>
-                    <div className="nm">{s.name}</div>
-                    <div className="rl">
-                      {(() => {
-                        const role = revealed ? roleMap[s.seat] : undefined;
-                        if (role) {
-                          return (
-                            <span className={`tag ${ROLE_CLS[role] ?? ""}`}>{ROLE_NAME[role] ?? role}</span>
-                          );
-                        }
-                        return dead ? (
+            </div>
+            {ringSeats.map((s, i) => {
+              const ang = (-90 + i * (360 / (ringSeats.length || 9))) * (Math.PI / 180);
+              const R = 36.5;
+              const dead = deadMap[s.seat];
+              return (
+                <div
+                  key={s.seat}
+                  className={`seat ${dead ? "dead" : ""} ${speaking === s.seat ? "speaking" : ""}`}
+                  style={{ left: `${50 + R * Math.cos(ang)}%`, top: `${50 + R * Math.sin(ang)}%` }}
+                >
+                  <div className="no num">{s.seat}</div>
+                  <div className="nm">{s.name}</div>
+                  <div className="rl">
+                    {(() => {
+                      const role = revealed ? roleMap[s.seat] : undefined;
+                      if (role) {
+                        return (
+                          <span className={`tag ${ROLE_CLS[role] ?? ""}`}>{ROLE_NAME[role] ?? role}</span>
+                        );
+                      }
+                      return dead ? (
                           <span className="tag st-fail">{CAUSE_NAME[dead] ?? "出局"}</span>
                         ) : (
                           <span className="meta" style={{ fontSize: 11 }}>
                             存活
                           </span>
                         );
-                      })()}
-                    </div>
+                    })()}
                   </div>
-                );
-              })}
-              {ringSeats.length === 0 && <p className="empty-hint">等待对局数据…</p>}
-            </div>
-          </div>
-
-          <div className="card">
-            <h2 className="panel-title">现场</h2>
-            <div className="feed">
-              {feed.length === 0 && (
-                <div className="sysline">
-                  {ICONS.clock}
-                  <span>
-                    {isLive ? "实时事件流等待推送……" : "回放已就绪——按「播放」逐事件重放这局比赛，或用「单步」逐步检视。"}
-                  </span>
                 </div>
-              )}
-              {feed.map((f, i) => {
-                if (f.kind === "msg")
-                  return (
-                    <div key={i} className={`msg ${f.cls ?? ""}`}>
-                      <div className="who">{f.who}</div>
-                      <div>{f.text}</div>
-                    </div>
-                  );
-                if (f.kind === "vote")
-                  return (
-                    <div key={i} className="msg">
-                      <div className="who">投票{f.revote ? " · PK 再投票" : ""}</div>
-                      <div className="tally">
-                        {f.tally.map((b, j) => (
-                          <span key={j} className="vote">
-                            {b.voter}→{b.target ?? "弃"}
-                          </span>
-                        ))}
-                      </div>
-                      <div>{f.note}</div>
-                    </div>
-                  );
-                const Icon = ICONS[f.icon];
+              );
+            })}
+            {ringSeats.length === 0 && <p className="empty-hint">等待对局数据…</p>}
+          </div>
+        </div>
+
+        <div className="card">
+          <h2 className="panel-title">现场</h2>
+          <div className="feed">
+            {feed.length === 0 && (
+              <div className="sysline">
+                {ICONS.clock}
+                <span>
+                  {isLive ? "实时事件流等待推送……" : "回放已就绪——按「播放」逐事件重放这局比赛，或用「单步」逐步检视。"}
+                </span>
+              </div>
+            )}
+            {feed.map((f, i) => {
+              if (f.kind === "msg")
                 return (
-                  <div key={i} className={`sysline ${f.bad ? "bad-note" : ""}`}>
-                    {Icon}
-                    <span>{f.html}</span>
+                  <div key={i} className={`msg ${f.cls ?? ""}`}>
+                    <div className="who">{f.who}</div>
+                    <div>{f.text}</div>
                   </div>
                 );
-              })}
-              <div ref={feedEnd} />
-            </div>
+              if (f.kind === "vote")
+                return (
+                  <div key={i} className="msg">
+                    <div className="who">投票{f.revote ? " · PK 再投票" : ""}</div>
+                    <div className="tally">
+                      {f.tally.map((b, j) => (
+                        <span key={j} className="vote">
+                          {b.voter}→{b.target ?? "弃"}
+                        </span>
+                      ))}
+                    </div>
+                    <div>{f.note}</div>
+                  </div>
+                );
+              const Icon = ICONS[f.icon];
+              return (
+                <div key={i} className={`sysline ${f.bad ? "bad-note" : ""}`}>
+                  {Icon}
+                  <span>{f.html}</span>
+                </div>
+              );
+            })}
+            <div ref={feedEnd} />
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 路由壳：/games/:id 有所属比赛则跳转详情页（观战内嵌其中），独立局直接渲染面板 */
+export function GameView() {
+  const { id } = useParams<{ id?: string }>();
+  const navigate = useNavigate();
+  const [redirected, setRedirected] = useState(false);
+
+  useEffect(() => {
+    if (!id || redirected) return;
+    void api
+      .game(id)
+      .then((d) => {
+        if (d.game?.tournamentId) {
+          setRedirected(true);
+          navigate(`/tournaments/${d.game.tournamentId}`, { replace: true });
+        }
+      })
+      .catch(() => {});
+  }, [id, redirected, navigate]);
+
+  if (!id) return <Navigate to="/tournaments" replace />;
+  if (redirected) return null;
+  return (
+    <section className="section screen-pad">
+      <div className="container">
+        <button className="btn btn-ghost btn-sm" onClick={() => navigate("/tournaments")}>
+          ← 返回列表
+        </button>
+        <div style={{ marginTop: 16 }}>
+          <GamePanel gameId={id} />
         </div>
       </div>
     </section>

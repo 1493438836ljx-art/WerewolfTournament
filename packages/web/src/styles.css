@@ -356,3 +356,4 @@ dialog::backdrop { background: color-mix(in oklch, var(--fg) 32%, transparent); 
 .dlg-close { position: absolute; top: 14px; right: 14px; }
 .divider-note { border-top: 1px solid var(--border); margin-top: var(--gap-lg); padding-top: 14px; }
 .empty-hint { color: var(--muted); font-size: 14px; padding: 18px 0; text-align: center; }
+.ds-table tr.sel-row { background: var(--fg-soft); box-shadow: inset 2px 0 0 var(--accent); }

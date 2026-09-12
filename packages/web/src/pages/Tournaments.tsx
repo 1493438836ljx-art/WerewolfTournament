@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, type GameRow, type LeaderRow, type TournamentRow } from "../api.js";
 import { StatusTag, toast } from "../components.js";
 import { useAuth } from "../auth.js";
+import { GamePanel } from "./GameView.js";
 
 type Kind = "training" | "official";
 
@@ -26,6 +27,14 @@ export function TournamentsPage() {
   const [err, setErr] = useState("");
   const [creating, setCreating] = useState(false);
   const [abortConfirm, setAbortConfirm] = useState<string | null>(null);
+  const [watchId, setWatchId] = useState<string | null>(null);
+  // 默认观看：进行中的局，否则第一局（比赛对象变化时自动跟随）
+  const defaultWatch = useMemo(() => {
+    if (!selected?.games.length) return null;
+    const running = selected.games.find((g) => g.status === "running");
+    return (running ?? selected.games[0])!.id;
+  }, [selected]);
+  const effectiveWatch = watchId && selected?.games.some((g) => g.id === watchId) ? watchId : defaultWatch;
 
   const refreshList = useCallback(() => {
     api.listTournaments().then(setTours).catch(() => {});
@@ -141,7 +150,7 @@ export function TournamentsPage() {
 
           <div className="grid-2" style={{ alignItems: "start" }}>
             <div className="card">
-              <h2 className="panel-title">对局</h2>
+              <h2 className="panel-title">对局{selected.games.length > 1 ? `（${selected.games.length} 局 · 点击切换下方观战）` : "（下方实时观战/回放）"}</h2>
               <div className="table-wrap">
                 <table className="ds-table">
                   <thead>
@@ -149,12 +158,16 @@ export function TournamentsPage() {
                       <th>#</th>
                       <th>状态</th>
                       <th>胜方</th>
-                      <th>观战</th>
                     </tr>
                   </thead>
                   <tbody>
                     {selected.games.map((g) => (
-                      <tr key={g.id}>
+                      <tr
+                        key={g.id}
+                        style={{ cursor: "pointer" }}
+                        className={g.id === watchId ? "sel-row" : undefined}
+                        onClick={() => setWatchId(g.id)}
+                      >
                         <td className="num">第 {g.seq} 局</td>
                         <td>
                           <StatusTag status={g.status} />
@@ -167,11 +180,6 @@ export function TournamentsPage() {
                           ) : (
                             <span className="meta">—</span>
                           )}
-                        </td>
-                        <td>
-                          <Link className="btn btn-ghost btn-sm btn-arrow" to={`/games/${g.id}`}>
-                            {g.status === "running" ? "实时观战" : g.status === "done" ? "观战回放" : "待开始"}
-                          </Link>
                         </td>
                       </tr>
                     ))}
@@ -223,6 +231,12 @@ export function TournamentsPage() {
               )}
             </div>
           </div>
+
+          {effectiveWatch && (
+            <div style={{ marginTop: 20 }}>
+              <GamePanel gameId={effectiveWatch} />
+            </div>
+          )}
         </div>
       </section>
     );
