@@ -59,15 +59,14 @@ function Tabs() {
   const loc = useLocation();
   const current = loc.pathname.startsWith("/tournaments")
     ? "tournaments"
-    : loc.pathname.startsWith("/games")
-      ? "game"
-      : loc.pathname.startsWith("/referee")
-        ? "referee"
+    : loc.pathname.startsWith("/referee")
+      ? "referee"
+      : loc.pathname.startsWith("/games")
+        ? "tournaments"
         : "agents";
   const items = [
     { key: "agents", to: "/", label: "选手 Agent" },
     { key: "tournaments", to: "/tournaments", label: "比赛" },
-    { key: "game", to: "/games", label: "对局观战" },
     { key: "referee", to: "/referee", label: "裁判" },
   ];
   return (
@@ -123,7 +122,7 @@ function Shell() {
           <Route path="/agents" element={<AgentsPage />} />
           <Route path="/tournaments" element={<TournamentsPage />} />
           <Route path="/tournaments/:id" element={<TournamentsPage />} />
-          <Route path="/games" element={<GameView />} />
+          <Route path="/games" element={<Navigate to="/tournaments" replace />} />
           <Route path="/games/:id" element={<GameView />} />
           <Route path="/referee" element={<RefereePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

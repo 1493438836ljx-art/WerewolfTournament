@@ -383,8 +383,11 @@ export function GameView() {
                   <span className="dot" />
                   直播中
                 </span>
-                <button className="btn btn-ghost btn-sm" onClick={() => navigate("/tournaments")}>
-                  返回锦标赛
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => navigate(game?.tournamentId ? `/tournaments/${game.tournamentId}` : "/tournaments")}
+                >
+                  ← 返回比赛
                 </button>
               </div>
             ) : (
@@ -411,6 +414,12 @@ export function GameView() {
                   }}
                 >
                   重放
+                </button>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => navigate(game?.tournamentId ? `/tournaments/${game.tournamentId}` : "/tournaments")}
+                >
+                  ← 返回比赛
                 </button>
               </div>
             )}
