@@ -30,6 +30,7 @@ export interface TournamentRow {
   id: string;
   name: string;
   kind: string;
+  createdBy: string | null;
   status: string;
 }
 

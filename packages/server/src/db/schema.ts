@@ -37,6 +37,8 @@ export const tournaments = pgTable("tournaments", {
   name: text("name").notNull(),
   /** training=训练赛（自由编排）| official=正式比赛（全员轮转） */
   kind: text("kind").notNull().default("training"),
+  /** 创建者（选手约战的训练赛由其本人启停；null=管理员） */
+  createdBy: text("created_by"),
   status: text("status").notNull().default("draft"), // draft|running|done|aborted
   configJson: jsonb("config_json").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

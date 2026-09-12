@@ -130,14 +130,9 @@ for line in sys.stdin:
     t=msg.get("type"); rid=msg.get("msg_id")
     if t=="hello":
         send({"v":1,"in_reply_to":rid,"type":"ready","agent_name":"bad-vote"})
-    elif t=="vote_request":
-        send({"v":1,"in_reply_to":rid,"type":"vote","target":99})  # 非法座位
-    elif t=="sheriff_vote_request":
-        send({"v":1,"in_reply_to":rid,"type":"sheriff_vote","target":99})  # 非法座位
-    elif t in ("day_speech_request","pk_speech_request"):
-        send({"v":1,"in_reply_to":rid,"type":"speech","text":"我是好人"})
-    elif t=="last_words_request":
-        send({"v":1,"in_reply_to":rid,"type":"last_words","text":"LW"})
+    else:
+        # 对任何请求一律回非法座位投票，稳定累计违规触发 DQ
+        send({"v":1,"in_reply_to":rid,"type":"vote","target":99})
 `,
   );
   return dir;

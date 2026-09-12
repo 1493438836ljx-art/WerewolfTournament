@@ -147,7 +147,7 @@ export function TournamentsPage() {
         </div>
 
         <div className="grid-1-2">
-          {isAdmin ? (
+          {isAdmin || kindSel === "training" ? (
             <div className="card">
               <h2 className="panel-title">创建{KIND_TXT[kindSel]}</h2>
               <div className="stack" style={{ gap: 16 }}>
@@ -178,9 +178,9 @@ export function TournamentsPage() {
                         style={{ width: 120 }}
                       />
                     </div>
-                    <p className="meta" style={{ fontSize: 12.5 }}>
-                      参赛名单 = 当前全部已注册 agent（{agents.length} 个），系统按轮随机分组对局，每局 9 人；
-                      人数不是 9 的倍数时，尾局由本轮队伍头部轮转补位。
+                    <p className="meta" style={{ fontSize: 12.5, whiteSpace: "normal" }}>
+                      1 轮 = 所有 {agents.length} 个 agent 各上场打一局（每局 9 人桌，随机分组；尾局不足自动轮转补位）。
+                      轮数 = 重复多少个这样的周期（多轮分组更随机、成绩更稳）。
                     </p>
                   </>
                 ) : (
@@ -215,7 +215,9 @@ export function TournamentsPage() {
                       </div>
                     </div>
                     <p className="meta" style={{ fontSize: 12 }}>
-                      参赛数 &lt; 9 时允许同一 agent 多副本参赛（开发/测试场景）
+                      {isAdmin
+                        ? "参赛数 < 9 时允许同一 agent 多副本参赛（开发/测试场景）"
+                        : "约战制：至少勾选你自己上传的一个 agent，其余对手任选（含平台 bot）"}
                     </p>
                   </>
                 )}
@@ -230,10 +232,10 @@ export function TournamentsPage() {
             </div>
           ) : (
             <div className="card">
-              <h2 className="panel-title">参赛方式</h2>
-              <p className="meta" style={{ fontSize: 13 }}>
-                选手在「选手 Agent」页上传提交并自检通过后自动进入正式比赛候选名单；
-                训练赛与正式比赛由管理员编排。你可以在右侧查看所有赛程、实时观战与积分榜。
+              <h2 className="panel-title">正式比赛说明</h2>
+              <p className="meta" style={{ fontSize: 13, whiteSpace: "normal" }}>
+                正式比赛由管理员编排：所有通过自检的 agent 自动参赛，系统安排全员轮流上场。
+                你可以在右侧查看赛程、实时观战与积分榜。想练手？切到「训练赛」自己约一桌。
               </p>
             </div>
           )}
@@ -262,12 +264,12 @@ export function TournamentsPage() {
                           <StatusTag status={t.status} />
                         </td>
                         <td onClick={(e) => e.stopPropagation()}>
-                          {isAdmin && t.status === "draft" && (
+                          {(isAdmin || t.createdBy === user?.id) && t.status === "draft" && (
                             <button className="btn btn-secondary btn-sm" onClick={() => start(t)}>
                               开始比赛
                             </button>
                           )}
-                          {isAdmin && t.status === "running" && (
+                          {(isAdmin || t.createdBy === user?.id) && t.status === "running" && (
                             <button className="btn btn-secondary btn-sm" onClick={() => abort(t)}>
                               {abortConfirm === t.id ? "确认中止？" : "中止"}
                             </button>

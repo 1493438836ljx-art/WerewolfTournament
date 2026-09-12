@@ -17,6 +17,7 @@ import { getReferee } from "../llmreferee.js";
 export interface TournamentConfig {
   name: string;
   kind: "training" | "official";
+  creatorId?: string | null;
   agentIds: string[];
   gamesPerAgent: number;
   /** 正式比赛：每个 agent 上场的轮数（每轮全员参与） */
@@ -56,6 +57,7 @@ export class GameService {
       id,
       name: cfg.name,
       kind: cfg.kind,
+      createdBy: cfg.creatorId ?? null,
       status: "draft",
       configJson: {
         ...cfg,

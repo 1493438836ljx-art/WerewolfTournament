@@ -1,0 +1,1 @@
+ALTER TABLE "tournaments" ADD COLUMN "created_by" text;

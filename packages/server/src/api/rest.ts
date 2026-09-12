@@ -1,5 +1,5 @@
 // REST API：agents / tournaments / games / referee。
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { asc, desc, eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { agents, gameEvents, games, gameSeats, llmCalls, scores, tournaments } from "../db/schema.js";
@@ -114,7 +114,7 @@ export function registerRest(app: FastifyInstance, gameService: GameService, opt
   });
 
   // ---------- tournaments ----------
-  app.post("/api/tournaments", { preHandler: requireAuth("admin") }, async (req, reply) => {
+  app.post("/api/tournaments", { preHandler: requireAuth() }, async (req, reply) => {
     const body = (req.body ?? {}) as {
       name?: string;
       kind?: "training" | "official";
@@ -124,14 +124,27 @@ export function registerRest(app: FastifyInstance, gameService: GameService, opt
       maxConcurrentGames?: number;
     };
     const kind = body.kind === "official" ? "official" : "training";
+    const user = req.user as { id: string; role: string };
+    if (kind === "official" && user.role !== "admin") {
+      return reply.code(403).send({ error: "正式比赛由管理员编排" });
+    }
     if (!body.name) return reply.code(400).send({ error: "name 必填" });
     if (kind === "training" && (!Array.isArray(body.agentIds) || body.agentIds.length < 1)) {
       return reply.code(400).send({ error: "训练赛需要选择参赛 agent" });
+    }
+    // 选手发起训练赛：所选 agent 中至少一个是自己的提交（约战制）
+    if (kind === "training" && user.role !== "admin") {
+      const rows = await db.select({ id: agents.id, ownerId: agents.ownerId }).from(agents);
+      const mine = new Set(rows.filter((r) => r.ownerId === user.id).map((r) => r.id));
+      if (!body.agentIds!.some((id: string) => mine.has(id))) {
+        return reply.code(403).send({ error: "训练赛需至少包含你自己的一个 agent（约战制）" });
+      }
     }
     try {
       const id = await gameService.createTournament({
         name: body.name,
         kind,
+        creatorId: user.id,
         agentIds: body.agentIds ?? [],
         gamesPerAgent: body.gamesPerAgent ?? 2,
         officialRounds: body.officialRounds ?? 1,
@@ -152,14 +165,24 @@ export function registerRest(app: FastifyInstance, gameService: GameService, opt
     return t;
   });
 
-  app.post("/api/tournaments/:id/start", { preHandler: requireAuth("admin") }, async (req) => {
+  // 启停权限：管理员 或 该比赛的创建者（选手约战的训练赛可自行开赛/中止）
+  async function canControl(req: FastifyRequest, id: string): Promise<boolean> {
+    const user = req.user as AuthUser;
+    if (user.role === "admin") return true;
+    const [t] = await db.select().from(tournaments).where(eq(tournaments.id, id)).limit(1);
+    return !!t && t.createdBy === user.id;
+  }
+
+  app.post("/api/tournaments/:id/start", { preHandler: requireAuth() }, async (req, reply) => {
     const { id } = req.params as { id: string };
+    if (!(await canControl(req, id))) return reply.code(403).send({ error: "只有管理员或创建者可以开始比赛" });
     void gameService.startTournament(id).catch((e) => app.log.error(e, "tournament start failed"));
     return { started: true };
   });
 
-  app.post("/api/tournaments/:id/abort", { preHandler: requireAuth("admin") }, async (req) => {
+  app.post("/api/tournaments/:id/abort", { preHandler: requireAuth() }, async (req, reply) => {
     const { id } = req.params as { id: string };
+    if (!(await canControl(req, id))) return reply.code(403).send({ error: "只有管理员或创建者可以中止比赛" });
     await gameService.abortTournament(id);
     return { aborted: true };
   });
