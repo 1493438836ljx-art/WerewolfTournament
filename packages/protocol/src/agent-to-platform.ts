@@ -53,6 +53,34 @@ export const a2pMessageSchema = z.discriminatedUnion("type", [
     text: speechTextSchema,
   }),
 
+  // 是否上警竞选（in_reply_to -> sheriff_campaign_request）
+  z.object({
+    ...a2pEnvelopeSchema.shape,
+    type: z.literal("sheriff_campaign"),
+    run: z.boolean(),
+  }),
+
+  // 竞选发言（in_reply_to -> sheriff_speech_request）
+  z.object({
+    ...a2pEnvelopeSchema.shape,
+    type: z.literal("sheriff_speech"),
+    text: speechTextSchema,
+  }),
+
+  // 警长投票（in_reply_to -> sheriff_vote_request；弃票 null）
+  z.object({
+    ...a2pEnvelopeSchema.shape,
+    type: z.literal("sheriff_vote"),
+    target: seatOrNullSchema,
+  }),
+
+  // 移交警徽（in_reply_to -> sheriff_transfer_request；null = 撕掉）
+  z.object({
+    ...a2pEnvelopeSchema.shape,
+    type: z.literal("sheriff_transfer"),
+    to: seatOrNullSchema,
+  }),
+
   // Agent 主动上报错误（不影响对局，平台记录进日志）
   z.object({
     ...a2pEnvelopeSchema.shape,

@@ -35,7 +35,12 @@ const d = RUN ? describe : describe.skip;
 const processes: AgentProcess[] = [];
 afterAll(async () => {
   await Promise.all(processes.map((p) => p.kill("test-end").catch(() => {})));
-  execSync("docker ps -aq --filter name=wt-agent-gtest --format {{.ID}} | xargs -r docker rm -f", { stdio: "ignore" });
+  try {
+    const ids = execSync("docker ps -aq --filter name=wt-agent-gtest --format {{.ID}}", { encoding: "utf8" }).trim();
+    if (ids) execSync(`docker rm -f ${ids.replace(/\n/g, " ")}`, { stdio: "ignore" });
+  } catch {
+    /* 清理尽力而为 */
+  }
 });
 
 async function spawnBot(seat: number): Promise<AgentProcess> {

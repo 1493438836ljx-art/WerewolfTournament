@@ -43,6 +43,14 @@ export function autobotRespond(s: GameState, req: PendingRequest, rng: Rng): Res
       return { t: "vote", target: rng.pick(req.candidates) };
     case "last_words":
       return { t: "last_words", text: "我的身份信息后面的人注意听，先走一步" };
+    case "sheriff_campaign":
+      return { t: "sheriff_campaign", run: rng.next() < 0.5 };
+    case "sheriff_speech":
+      return { t: "sheriff_speech", text: rng.pick(SPEECHES) };
+    case "sheriff_vote":
+      return { t: "sheriff_vote", target: rng.pick(req.candidates) };
+    case "sheriff_transfer":
+      return { t: "sheriff_transfer", to: req.targets.length ? rng.pick(req.targets) : null };
   }
 }
 

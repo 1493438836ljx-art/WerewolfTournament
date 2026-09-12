@@ -104,6 +104,8 @@ export const p2aMessageSchema = z.discriminatedUnion("type", [
     ...p2aEnvelopeSchema.shape,
     type: z.literal("day_speech_request"),
     day: z.number().int().min(1),
+    /** 发言轮次（两轮制：1=陈述轮，2=反驳/补充轮） */
+    round: z.number().int().min(1).max(2).default(1),
     /** 本轮发言顺序（完整座位序列） */
     order: seatListSchema,
     alive: seatListSchema,
@@ -133,6 +135,43 @@ export const p2aMessageSchema = z.discriminatedUnion("type", [
     ...p2aEnvelopeSchema.shape,
     type: z.literal("last_words_request"),
     cause: z.enum(["night", "vote"]),
+    alive: seatListSchema,
+    timeout_ms: z.number().int().min(1000),
+  }),
+
+  // ---- 警长竞选（仅第 1 天白天开场，config.sheriff.enabled）----
+  z.object({
+    ...p2aEnvelopeSchema.shape,
+    type: z.literal("sheriff_campaign_request"),
+    /** 是否上警竞选 */
+    candidates: seatListSchema,
+    alive: seatListSchema,
+    timeout_ms: z.number().int().min(1000),
+  }),
+  z.object({
+    ...p2aEnvelopeSchema.shape,
+    type: z.literal("sheriff_speech_request"),
+    /** 竞选发言顺序 */
+    order: seatListSchema,
+    alive: seatListSchema,
+    char_limit: z.number().int().min(1),
+    timeout_ms: z.number().int().min(1000),
+  }),
+  z.object({
+    ...p2aEnvelopeSchema.shape,
+    type: z.literal("sheriff_vote_request"),
+    /** 候选人（无候选人时不会发出此请求） */
+    candidates: seatListSchema,
+    /** 是否允许弃票 */
+    abstain_allowed: z.boolean(),
+    alive: seatListSchema,
+    timeout_ms: z.number().int().min(1000),
+  }),
+  z.object({
+    ...p2aEnvelopeSchema.shape,
+    type: z.literal("sheriff_transfer_request"),
+    /** 可移交对象（不含自己）；null = 撕掉警徽 */
+    transfer_targets: seatListSchema,
     alive: seatListSchema,
     timeout_ms: z.number().int().min(1000),
   }),

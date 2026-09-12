@@ -143,12 +143,23 @@ def ask_json(prompt, valid):
     return v if v in valid else None
 
 
-def ask_speech(char_limit):
+def ask_speech(char_limit, speech_round=1, campaign=False):
+    """发言生成：竞选发言 / 第一轮陈述 / 第二轮针对性反驳。"""
+    if campaign:
+        guide = ("这是警长竞选发言。用第一人称直接输出正文，200 字以内：说明你为什么适合当警长、"
+                 "你的阵营立场和带队思路。狼人要伪装好人视角。")
+    elif speech_round == 2:
+        guide = ("这是第二轮发言（反驳轮）。用第一人称直接输出正文，300 字以内：针对第一轮发言中"
+                 "与你观点冲突或最可疑的人进行反驳与追问，可以修正自己的判断，给出更明确的票向。")
+    else:
+        guide = ("这是第一轮发言（陈述轮）。用第一人称直接输出正文，400 字以内：梳理已知信息"
+                 "（死讯/发言/票型），给出你的怀疑链与理由，明确表态。")
+        if M["me"] and M["me"].get("role") == "seer":
+            guide += "你是预言家：局势需要时果断报查验。"
     out = llm(
-        my_faction_goal() + "\n用第一人称直接输出发言正文（不要引号、不要解释），60 字以内。"
-        + ("如果你是预言家且局势需要，可以报查验。" if M["me"]["role"] == "seer" else ""),
-        context() + "\n\n现在轮到你发言：给出你的表态/怀疑/信息。",
-        max_tokens=300,
+        my_faction_goal() + "\n" + guide + "不要引号、不要解释。",
+        context() + "\n\n现在轮到你发言。",
+        max_tokens=1200,
     )
     if out:
         out = re.sub(r"\s+", " ", out).strip().strip('"')[:char_limit]
@@ -214,7 +225,30 @@ def handle(msg):
     elif t == "day_speech_request" or t == "pk_speech_request":
         M["alive"] = msg.get("alive", M["alive"])
         M["day"] = msg.get("day", M["day"])
-        send({"v": 1, "in_reply_to": rid, "type": "speech", "text": ask_speech(msg.get("char_limit", 2000))})
+        send({"v": 1, "in_reply_to": rid, "type": "speech",
+              "text": ask_speech(msg.get("char_limit", 2000), speech_round=msg.get("round", 1))})
+
+    elif t == "sheriff_campaign_request":
+        M["alive"] = msg.get("alive", M["alive"])
+        run = ask_json("警长竞选开始：是否上警竞选警长？（上警要发言并接受检视，神职带队收益大，"
+                       "狼人可伪装上警抢警徽）", [True, False])
+        send({"v": 1, "in_reply_to": rid, "type": "sheriff_campaign", "run": bool(run) if run is not None else (M["me"] or {}).get("role") in ("seer", "villager")})
+
+    elif t == "sheriff_speech_request":
+        send({"v": 1, "in_reply_to": rid, "type": "sheriff_speech",
+              "text": ask_speech(msg.get("char_limit", 2000), campaign=True)})
+
+    elif t == "sheriff_vote_request":
+        cands = msg.get("candidates") or []
+        v = ask_json("警长投票：综合竞选发言，选出最有带队能力的警长（可以投自己）。弃票 null。", cands + [None])
+        send({"v": 1, "in_reply_to": rid, "type": "sheriff_vote",
+              "target": v if v in cands else (random.choice(cands) if cands else None)})
+
+    elif t == "sheriff_transfer_request":
+        targets = msg.get("transfer_targets") or []
+        v = ask_json("你是警长，即将出局。把警徽移交给最像好人的存活者（null=撕掉警徽）。", targets + [None])
+        send({"v": 1, "in_reply_to": rid, "type": "sheriff_transfer",
+              "to": v if v in targets else (random.choice(targets) if targets else None)})
 
     elif t == "night_action_request":
         M["alive"] = msg.get("alive", M["alive"])

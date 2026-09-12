@@ -27,6 +27,21 @@ export function tally(ballots: Ballot[], candidates: Seat[]): TallyResult {
   return { counts, max, leaders };
 }
 
+/** 加权计票（放逐投票：警长票 × extraVote，如 1.5）。权重精度 0.1。 */
+export function weightedTally(ballots: Ballot[], candidates: Seat[], weightOf: (voter: Seat) => number): TallyResult {
+  const counts = new Map<Seat | null, number>();
+  for (const c of candidates) counts.set(c, 0);
+  for (const b of ballots) {
+    if (b.target !== null && counts.has(b.target)) {
+      counts.set(b.target, Math.round(((counts.get(b.target) ?? 0) + weightOf(b.voter)) * 10) / 10);
+    }
+  }
+  let max = 0;
+  for (const v of counts.values()) max = Math.max(max, v);
+  const leaders = candidates.filter((c) => (counts.get(c) ?? 0) === max);
+  return { counts, max, leaders };
+}
+
 /**
  * 狼刀共识：多数决；平票取座位号最小的存活狼的选择。
  * ballots 为各狼提交（含 null=空刀）；tieBreakSeat 为座位最小的存活狼。

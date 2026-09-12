@@ -39,8 +39,23 @@ export function toAgentEvents(events: EngineEvent[], viewerSeat: Seat): AgentEve
           kind: "speech_heard",
           day: p.day as number,
           seat: p.seat as Seat,
-          speech_kind: p.kind as "speech" | "pk",
+          speech_kind: p.kind as "speech" | "pk" | "campaign",
+          round: p.round as number | undefined,
           text: p.text as string,
+        });
+        break;
+      case "sheriff_elected":
+        out.push({
+          kind: "sheriff_elected",
+          day: p.day as number,
+          seat: (p.seat as Seat | null) ?? null,
+        });
+        break;
+      case "sheriff_transfer":
+        out.push({
+          kind: "sheriff_transfer",
+          from: p.from as Seat,
+          to: (p.to as Seat | null) ?? null,
         });
         break;
       case "last_words":

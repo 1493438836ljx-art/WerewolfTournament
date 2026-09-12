@@ -83,10 +83,12 @@ export const votes = pgTable(
     gameId: text("game_id").notNull().references(() => games.id),
     day: integer("day").notNull(),
     round: integer("round").notNull(),
+    /** sheriff=警长竞选票 | exile=放逐票 */
+    kind: text("kind").notNull().default("exile"),
     voterSeat: integer("voter_seat").notNull(),
     targetSeat: integer("target_seat"),
   },
-  (t) => [primaryKey({ columns: [t.gameId, t.day, t.round, t.voterSeat] })],
+  (t) => [primaryKey({ columns: [t.gameId, t.day, t.round, t.kind, t.voterSeat] })],
 );
 
 export const scores = pgTable("scores", {

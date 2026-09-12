@@ -27,7 +27,7 @@ export function dbSinks(tournamentId: string | null, seq0 = 0): GameSinks & { ga
       for (const ev of events) {
         if (ev.kind === "vote_result") {
           const p = ev.payload as {
-            day: number; round: number;
+            day: number; round: number; sheriff?: boolean;
             tally: Array<{ voter: number; target: number | null }>;
           };
           if (p.tally?.length) {
@@ -36,6 +36,7 @@ export function dbSinks(tournamentId: string | null, seq0 = 0): GameSinks & { ga
                 gameId: state.gameId,
                 day: p.day,
                 round: p.round,
+                kind: p.sheriff ? "sheriff" : "exile",
                 voterSeat: b.voter,
                 targetSeat: b.target,
               })),

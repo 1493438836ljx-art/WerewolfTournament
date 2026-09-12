@@ -36,6 +36,15 @@ export interface VoteConfig {
   abstainAllowed: boolean;
 }
 
+export interface SheriffConfig {
+  /** 第 1 天警长竞选（上警发言 + 投票当选） */
+  enabled: boolean;
+  /** 警长放逐投票权重（1.5 票） */
+  extraVote: number;
+  /** 警长死亡时可移交警徽（false = 自动撕徽） */
+  transferOnDeath: boolean;
+}
+
 export interface TimeoutsMs {
   night_action: number;
   speech: number;
@@ -53,6 +62,9 @@ export interface GameConfig {
   hunter: HunterConfig;
   lastWords: LastWordsConfig;
   vote: VoteConfig;
+  sheriff: SheriffConfig;
+  /** 每个白天的发言轮数（1=单轮，2=陈述+反驳） */
+  speechRounds: 1 | 2;
   timeoutsMs: TimeoutsMs;
   speechCharLimit: number;
 }
@@ -70,6 +82,8 @@ export const DEFAULT_CONFIG: GameConfig = {
   hunter: { canShootWhenPoisoned: false },
   lastWords: { night: "first_night_only", dayElimination: "always", shotVictimGetsLastWords: false },
   vote: { tie: "pk_speech_then_revote", revoteTie: "no_elimination", pkCandidatesCanVote: false, abstainAllowed: false },
+  sheriff: { enabled: true, extraVote: 1.5, transferOnDeath: true },
+  speechRounds: 2,
   timeoutsMs: { night_action: 45000, speech: 90000, vote: 45000, last_words: 60000, hunter: 45000 },
   speechCharLimit: 2000,
 };

@@ -330,7 +330,7 @@ export function toRequestMessage(s: GameState, req: PendingRequest): Record<stri
     case "speech":
       return req.pk
         ? { type: "pk_speech_request", day: req.day, candidates: req.order, char_limit: s.config.speechCharLimit, ...base }
-        : { type: "day_speech_request", day: req.day, order: req.order, char_limit: s.config.speechCharLimit, ...base };
+        : { type: "day_speech_request", day: req.day, round: req.round, order: req.order, char_limit: s.config.speechCharLimit, ...base };
     case "vote":
       return {
         type: "vote_request",
@@ -342,6 +342,14 @@ export function toRequestMessage(s: GameState, req: PendingRequest): Record<stri
       };
     case "last_words":
       return { type: "last_words_request", cause: req.cause, ...base };
+    case "sheriff_campaign":
+      return { type: "sheriff_campaign_request", candidates: req.candidates, ...base };
+    case "sheriff_speech":
+      return { type: "sheriff_speech_request", order: req.order, char_limit: s.config.speechCharLimit, ...base };
+    case "sheriff_vote":
+      return { type: "sheriff_vote_request", candidates: req.candidates, abstain_allowed: req.abstainAllowed, ...base };
+    case "sheriff_transfer":
+      return { type: "sheriff_transfer_request", transfer_targets: req.targets, ...base };
   }
 }
 
@@ -352,9 +360,15 @@ function timeoutOf(s: GameState, req: PendingRequest): number {
     case "witch_action":
       return s.config.timeoutsMs.night_action;
     case "speech":
+    case "sheriff_speech":
       return s.config.timeoutsMs.speech;
     case "vote":
+    case "sheriff_vote":
       return s.config.timeoutsMs.vote;
+    case "sheriff_campaign":
+      return Math.min(s.config.timeoutsMs.vote, 30000);
+    case "sheriff_transfer":
+      return s.config.timeoutsMs.hunter;
     case "last_words":
       return s.config.timeoutsMs.last_words;
     case "hunter_shoot":
@@ -376,6 +390,14 @@ export function toResponsePayload(res: A2PMessage): ResponsePayload | null {
       return { t: "vote", target: res.target };
     case "last_words":
       return { t: "last_words", text: res.text };
+    case "sheriff_campaign":
+      return { t: "sheriff_campaign", run: res.run };
+    case "sheriff_speech":
+      return { t: "sheriff_speech", text: res.text };
+    case "sheriff_vote":
+      return { t: "sheriff_vote", target: res.target };
+    case "sheriff_transfer":
+      return { t: "sheriff_transfer", to: res.to };
     default:
       return null;
   }

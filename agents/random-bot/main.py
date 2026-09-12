@@ -89,6 +89,22 @@ def handle(msg, me):
         shoot = random.choice(targets) if targets and random.random() < 0.8 else None
         send({"v": 1, "in_reply_to": rid, "type": "hunter_shoot", "shoot": shoot})
 
+    elif t == "sheriff_campaign_request":
+        send({"v": 1, "in_reply_to": rid, "type": "sheriff_campaign", "run": random.random() < 0.5})
+
+    elif t == "sheriff_speech_request":
+        send({"v": 1, "in_reply_to": rid, "type": "sheriff_speech", "text": random.choice(SPEECHES)})
+
+    elif t == "sheriff_vote_request":
+        cands = msg.get("candidates") or []
+        send({"v": 1, "in_reply_to": rid, "type": "sheriff_vote",
+              "target": random.choice(cands) if cands else None})
+
+    elif t == "sheriff_transfer_request":
+        targets = msg.get("transfer_targets") or []
+        send({"v": 1, "in_reply_to": rid, "type": "sheriff_transfer",
+              "to": random.choice(targets) if targets and random.random() < 0.8 else None})
+
     elif t in ("notify", "game_end"):
         pass  # 随机策略不消费事件；真实 agent 应维护对局记忆
 

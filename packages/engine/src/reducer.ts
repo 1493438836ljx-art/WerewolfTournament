@@ -20,7 +20,7 @@ import {
   type SeatState,
 } from "./types.js";
 import { checkWin } from "./win.js";
-import { resolveWolfBallots, tally } from "./votes.js";
+import { resolveWolfBallots, tally, weightedTally } from "./votes.js";
 import { defaultAction } from "./defaults.js";
 
 export interface CreateGameOptions {
@@ -82,6 +82,7 @@ export function createGame(opts: CreateGameOptions): EngineUpdate {
     penalties: {},
     disqualifications: [],
     currentKill: null,
+    sheriffCandidates: [],
     collect: { wolfBallots: [], voteBallots: [] },
     nightActions: { night: 0, healUsed: false, poisonTarget: null },
   };
@@ -103,6 +104,7 @@ export function mergeConfig(partial?: Partial<GameConfig>): GameConfig {
     hunter: { ...d.hunter, ...partial?.hunter },
     lastWords: { ...d.lastWords, ...partial?.lastWords },
     vote: { ...d.vote, ...partial?.vote },
+    sheriff: { ...d.sheriff, ...partial?.sheriff },
     timeoutsMs: { ...d.timeoutsMs, ...partial?.timeoutsMs },
   };
 }
@@ -154,8 +156,16 @@ export function reduce(state: GameState, action: EngineAction): EngineUpdate {
       const st = seatState(s, action.seat);
       if (st.alive) {
         killSeat(s, action.seat, "disqualify", currentTurn(s));
+        // DQ 的警长：直接撕徽（不再给行动机会）
+        if (s.sheriff === action.seat) {
+          s.sheriff = undefined;
+          events = pushEvent(s, "sheriff_transfer", { from: action.seat, to: null }, "public");
+        }
         s.disqualifications.push({ seat: action.seat, reason: action.reason });
-        events = pushEvent(s, "player_disqualified", { seat: action.seat, reason: action.reason }, "public");
+        events = [
+          ...events,
+          ...pushEvent(s, "player_disqualified", { seat: action.seat, reason: action.reason }, "public"),
+        ];
         s.collect.wolfBallots = s.collect.wolfBallots.filter((b) => b.voter !== action.seat);
         s.collect.voteBallots = s.collect.voteBallots.filter((b) => b.voter !== action.seat);
         s.pending = s.pending.filter((p) => p.seat !== action.seat);
@@ -239,6 +249,27 @@ function validateResponse(s: GameState, req: PendingRequest, payload: ResponsePa
     case "last_words": {
       if (payload.t !== "last_words") throw bad(req, payload);
       if (payload.text.length > s.config.speechCharLimit * 2) throw bad(req, payload);
+      break;
+    }
+    case "sheriff_campaign": {
+      if (payload.t !== "sheriff_campaign") throw bad(req, payload);
+      break;
+    }
+    case "sheriff_speech": {
+      if (payload.t !== "sheriff_speech") throw bad(req, payload);
+      if (payload.text.length === 0 || payload.text.length > s.config.speechCharLimit) throw bad(req, payload);
+      break;
+    }
+    case "sheriff_vote": {
+      if (payload.t !== "sheriff_vote") throw bad(req, payload);
+      if (payload.target === null) {
+        if (!req.abstainAllowed) throw bad(req, payload);
+      } else if (!req.candidates.includes(payload.target)) throw bad(req, payload);
+      break;
+    }
+    case "sheriff_transfer": {
+      if (payload.t !== "sheriff_transfer") throw bad(req, payload);
+      if (payload.to !== null && !req.targets.includes(payload.to)) throw bad(req, payload);
       break;
     }
   }
@@ -343,11 +374,57 @@ function applyRespond(s: GameState, req: PendingRequest, payload: ResponsePayloa
           ...pushEvent(
             s,
             "speech",
-            { day: s.day, seat: req.seat, kind: req.pk ? "pk" : "speech", text: payload.text },
+            {
+              day: s.day,
+              seat: req.seat,
+              kind: req.pk ? "pk" : "speech",
+              round: req.round,
+              text: payload.text,
+            },
             "public",
           ),
         );
         if (s.phase.t === "day") s.phase.cursor = (s.phase.cursor ?? 0) + 1;
+      }
+      break;
+    }
+    case "sheriff_campaign": {
+      if (payload.t === "sheriff_campaign") {
+        if (payload.run) s.sheriffCandidates.push(req.seat);
+        if (s.phase.t === "day") s.phase.cursor = (s.phase.cursor ?? 0) + 1;
+      }
+      break;
+    }
+    case "sheriff_speech": {
+      if (payload.t === "sheriff_speech") {
+        events.push(
+          ...pushEvent(
+            s,
+            "speech",
+            { day: s.day, seat: req.seat, kind: "campaign", text: payload.text },
+            "public",
+          ),
+        );
+        if (s.phase.t === "day") s.phase.cursor = (s.phase.cursor ?? 0) + 1;
+      }
+      break;
+    }
+    case "sheriff_vote": {
+      if (payload.t === "sheriff_vote") {
+        s.collect.voteBallots.push({ voter: req.seat, target: payload.target });
+      }
+      break;
+    }
+    case "sheriff_transfer": {
+      if (payload.t === "sheriff_transfer") {
+        if (payload.to !== null && seatState(s, payload.to).alive) {
+          s.sheriff = payload.to;
+          events.push(...pushEvent(s, "sheriff_transfer", { from: req.seat, to: payload.to }, "public"));
+        } else {
+          s.sheriff = undefined;
+          events.push(...pushEvent(s, "sheriff_transfer", { from: req.seat, to: null }, "public"));
+        }
+        dropQueueHead(s, req.seat);
       }
       break;
     }
@@ -397,6 +474,10 @@ function killSeat(s: GameState, seat: Seat, cause: DeathCause, turn: number) {
   const st = seatState(s, seat);
   st.alive = false;
   st.death = { cause, turn };
+  // 警长阵亡：进入警徽移交队列（DQ 由调用方处理撕徽）
+  if (s.sheriff === seat && cause !== "disqualify" && s.config.sheriff.transferOnDeath) {
+    insertQueue(s, { kind: "sheriff_transfer", seat });
+  }
 }
 
 function setWinner(s: GameState, win: { faction: Faction; reason: string }, events: EngineEvent[]) {
@@ -463,6 +544,13 @@ function enqueueHead(s: GameState, item: DawnQueueItem) {
       alive: aliveSeats(s),
       targets: s.seats.filter((x) => x.alive && x.seat !== item.seat).map((x) => x.seat),
     });
+  } else if (item.kind === "sheriff_transfer") {
+    s.pending.push({
+      kind: "sheriff_transfer",
+      seat: item.seat,
+      targets: aliveSeats(s),
+      alive: aliveSeats(s),
+    });
   } else {
     s.pending.push({ kind: "last_words", seat: item.seat, cause: item.cause, alive: aliveSeats(s) });
   }
@@ -506,24 +594,16 @@ function resolveNightEnd(s: GameState, events: EngineEvent[]) {
   if (nightLastWords) {
     for (const seat of deaths) queue.push({ kind: "last_words", seat, cause: "night" });
   }
+  // 警长夜间死亡：遗言后移交警徽（killSeat 时 phase=night 无队列，在此补挂）
+  if (s.sheriff && deaths.includes(s.sheriff) && s.config.sheriff.transferOnDeath) {
+    queue.push({ kind: "sheriff_transfer", seat: s.sheriff });
+  }
   s.phase = { t: "dawn", no: night, queue };
 }
 
 // ---------- 白天 ----------
-function startDay(s: GameState, events: EngineEvent[]) {
-  s.day = s.night;
-  const deaths = s.seats
-    .filter((x) => !x.alive && x.death?.turn === s.night && x.death.cause !== "disqualify")
-    .map((x) => x.seat)
-    .sort((a, b) => a - b);
-  let anchor: Seat;
-  if (deaths.length > 0) {
-    anchor = nextAliveSeat(s, deaths[0]!);
-  } else {
-    const rng = rngOf(s);
-    anchor = rng.pick(aliveSeats(s));
-    saveRng(s, rng);
-  }
+/** 生成发言顺序：从锚点起顺时针的存活序列 */
+function speechOrderFrom(s: GameState, anchor: Seat): Seat[] {
   const order: Seat[] = [];
   let cur = anchor;
   const aliveCount = aliveSeats(s).length;
@@ -531,14 +611,145 @@ function startDay(s: GameState, events: EngineEvent[]) {
     if (seatState(s, cur).alive && !order.includes(cur)) order.push(cur);
     cur = nextAliveSeat(s, cur);
   }
-  s.phase = { t: "day", no: s.day, step: "speech", order, cursor: 0, voteIssued: false };
-  events.push(...pushEvent(s, "speech_order", { day: s.day, order }, "public"));
+  return order;
+}
+
+/** 警长选出/无警长后进入正式发言阶段 */
+function enterSpeechPhase(s: GameState) {
+  // 发言起点：有警长 -> 警长下家；无 -> 死者下家 / 随机锚点
+  let anchor: Seat;
+  const deaths = s.seats
+    .filter((x) => !x.alive && x.death?.turn === s.night && x.death.cause !== "disqualify")
+    .map((x) => x.seat)
+    .sort((a, b) => a - b);
+  if (s.sheriff) {
+    // 警长发言起点：警长的下一位存活者（严格下一位，不含警长自己）
+    const n = s.config.playerCount;
+    anchor = nextAliveSeat(s, ((s.sheriff % n) + 1) as Seat);
+  }
+  else if (deaths.length > 0) anchor = nextAliveSeat(s, deaths[0]!);
+  else {
+    const rng = rngOf(s);
+    anchor = rng.pick(aliveSeats(s));
+    saveRng(s, rng);
+  }
+  const order = speechOrderFrom(s, anchor);
+  const p = s.phase;
+  if (p.t === "day") {
+    p.step = "speech";
+    p.order = order;
+    p.cursor = 0;
+    p.speechRound = 1;
+    p.voteIssued = false;
+  }
+}
+
+function startDay(s: GameState, events: EngineEvent[]) {
+  s.day = s.night;
+  const sheriffDay = s.day === 1 && s.config.sheriff.enabled;
+  s.sheriffCandidates = [];
+  if (sheriffDay) {
+    // 第 1 天：警长竞选（逐个询问是否上警）
+    s.phase = { t: "day", no: s.day, step: "campaign_run", order: [...aliveSeats(s)], cursor: 0 };
+    return;
+  }
+  s.phase = { t: "day", no: s.day, step: "speech" };
+  enterSpeechPhase(s);
+  const p = s.phase;
+  if (p.t === "day" && p.order) {
+    events.push(...pushEvent(s, "speech_order", { day: s.day, order: p.order }, "public"));
+  }
 }
 
 function advanceDay(s: GameState, events: EngineEvent[]) {
   const p = s.phase;
   if (p.t !== "day") return;
 
+  // ---- 警长竞选：逐个询问是否上警 ----
+  if (p.step === "campaign_run") {
+    const order = p.order ?? [];
+    const cursor = p.cursor ?? 0;
+    if (cursor < order.length && seatState(s, order[cursor]!).alive) {
+      s.pending.push({
+        kind: "sheriff_campaign",
+        seat: order[cursor]!,
+        candidates: [...s.sheriffCandidates],
+        alive: aliveSeats(s),
+      });
+    } else if (cursor < order.length) {
+      p.cursor = cursor + 1; // 已死（竞选中不会发生，防御）
+    } else {
+      // 上警结束
+      if (s.sheriffCandidates.length === 0) {
+        events.push(...pushEvent(s, "sheriff_elected", { day: p.no, seat: null }, "public"));
+        enterSpeechPhase(s);
+        if (p.order) events.push(...pushEvent(s, "speech_order", { day: p.no, order: p.order }, "public"));
+      } else if (s.sheriffCandidates.length === 1) {
+        s.sheriff = s.sheriffCandidates[0]!;
+        events.push(...pushEvent(s, "sheriff_elected", { day: p.no, seat: s.sheriff }, "public"));
+        enterSpeechPhase(s);
+        if (p.order) events.push(...pushEvent(s, "speech_order", { day: p.no, order: p.order }, "public"));
+      } else {
+        p.step = "campaign_speech";
+        p.cursor = 0;
+      }
+    }
+    return;
+  }
+
+  // ---- 警长竞选：竞选发言 / PK 辩词 ----
+  if (p.step === "campaign_speech" || p.step === "sheriff_pk_speech") {
+    const order = p.step === "campaign_speech" ? [...s.sheriffCandidates] : (p.pkCandidates ?? []);
+    const cursor = p.cursor ?? 0;
+    if (cursor < order.length && seatState(s, order[cursor]!).alive) {
+      s.pending.push({
+        kind: "sheriff_speech",
+        seat: order[cursor]!,
+        order,
+        alive: aliveSeats(s),
+      });
+    } else if (cursor < order.length) {
+      p.cursor = cursor + 1;
+    } else {
+      p.step = p.step === "campaign_speech" ? "sheriff_vote" : "sheriff_revote";
+      p.voteIssued = false;
+    }
+    return;
+  }
+
+  // ---- 警长竞选投票 / PK 再投票 ----
+  if (p.step === "sheriff_vote" || p.step === "sheriff_revote") {
+    if (!p.voteIssued) {
+      const round = p.step === "sheriff_vote" ? 1 : 2;
+      const candidates =
+        p.step === "sheriff_vote"
+          ? [...s.sheriffCandidates]
+          : (p.pkCandidates ?? []).filter((c) => seatState(s, c).alive);
+      const voters = aliveSeats(s); // 警长票全员参与（含候选人，可投自己）
+      if (candidates.length === 0 || voters.length === 0) {
+        events.push(...pushEvent(s, "sheriff_elected", { day: p.no, seat: null }, "public"));
+        enterSpeechPhase(s);
+        if (p.order) events.push(...pushEvent(s, "speech_order", { day: p.no, order: p.order }, "public"));
+        return;
+      }
+      for (const v of voters) {
+        s.pending.push({
+          kind: "sheriff_vote",
+          seat: v,
+          candidates,
+          abstainAllowed: true,
+          alive: aliveSeats(s),
+        });
+      }
+      p.voteIssued = true;
+      p.voteRound = round;
+    } else {
+      resolveSheriffVote(s, events);
+    }
+    return;
+  }
+
+  // ---- 正式发言（两轮）/ PK 辩词 ----
   if (p.step === "speech" || p.step === "pk_speech") {
     const order = p.step === "speech" ? (p.order ?? []) : (p.pkCandidates ?? []);
     const cursor = p.cursor ?? 0;
@@ -551,30 +762,35 @@ function advanceDay(s: GameState, events: EngineEvent[]) {
           day: p.no,
           order,
           pk: p.step === "pk_speech",
+          round: p.step === "speech" ? (p.speechRound ?? 1) : 1,
           alive: aliveSeats(s),
         });
       } else {
         p.cursor = cursor + 1; // 发言者已死（DQ 等），跳过
       }
-    } else {
-      // 发言结束
-      if (p.step === "speech") {
+    } else if (p.step === "speech") {
+      // 一轮发言结束：两轮制则进入第二轮（同顺序），否则进入投票
+      const cur = p.speechRound ?? 1;
+      if (cur < s.config.speechRounds) {
+        p.speechRound = (cur + 1) as 1 | 2;
+        p.cursor = 0;
+      } else {
         p.step = "vote";
         p.voteIssued = false;
-      } else {
-        p.step = "revote";
-        p.voteIssued = false;
       }
+    } else {
+      p.step = "revote";
+      p.voteIssued = false;
     }
     return;
   }
 
   if (p.step === "vote" || p.step === "revote") {
     if (!p.voteIssued) {
-      // 发起投票
+      // 发起放逐投票
       const round = p.step === "vote" ? 1 : 2;
       const candidates =
-        (p.step === "vote" ? aliveSeats(s) : (p.pkCandidates ?? []).filter((c) => seatState(s, c).alive));
+        p.step === "vote" ? aliveSeats(s) : (p.pkCandidates ?? []).filter((c) => seatState(s, c).alive);
       const voters =
         p.step === "vote"
           ? aliveSeats(s)
@@ -596,6 +812,7 @@ function advanceDay(s: GameState, events: EngineEvent[]) {
           round,
           candidates,
           abstainAllowed: s.config.vote.abstainAllowed,
+          sheriffVote: false,
           alive: aliveSeats(s),
         });
       }
@@ -618,6 +835,58 @@ function advanceDay(s: GameState, events: EngineEvent[]) {
   }
 }
 
+/** 警长竞选投票统计（人人 1 票；平票 -> PK -> 仍平 -> 无警长） */
+function resolveSheriffVote(s: GameState, events: EngineEvent[]) {
+  const p = s.phase;
+  if (p.t !== "day") return;
+  const round = p.voteRound ?? 1;
+  const ballots = [...s.collect.voteBallots];
+  s.collect.voteBallots = [];
+  const candidates =
+    round === 1 ? [...s.sheriffCandidates] : (p.pkCandidates ?? []).filter((c) => seatState(s, c).alive);
+  const t = tally(ballots, candidates);
+
+  let elected: Seat | null = null;
+  let pk: Seat[] = [];
+  if (t.leaders.length === 1 && t.max > 0) {
+    elected = t.leaders[0]!;
+  } else if (t.leaders.length > 1 && round === 1) {
+    pk = t.leaders; // 平票 -> PK 发言 -> 再投票
+  }
+
+  events.push(
+    ...pushEvent(
+      s,
+      "vote_result",
+      {
+        day: p.no,
+        round,
+        sheriff: true,
+        tally: ballots.map((b) => ({ voter: b.voter, target: b.target })),
+        eliminated: null,
+        pk_candidates: pk,
+      },
+      "public",
+    ),
+  );
+
+  if (elected !== null) {
+    s.sheriff = elected;
+    events.push(...pushEvent(s, "sheriff_elected", { day: p.no, seat: elected }, "public"));
+    enterSpeechPhase(s);
+    if (p.order) events.push(...pushEvent(s, "speech_order", { day: p.no, order: p.order }, "public"));
+  } else if (pk.length > 0) {
+    p.step = "sheriff_pk_speech";
+    p.pkCandidates = pk;
+    p.cursor = 0;
+  } else {
+    // 再投票仍平或零票 -> 本局无警长
+    events.push(...pushEvent(s, "sheriff_elected", { day: p.no, seat: null }, "public"));
+    enterSpeechPhase(s);
+    if (p.order) events.push(...pushEvent(s, "speech_order", { day: p.no, order: p.order }, "public"));
+  }
+}
+
 function resolveVote(s: GameState, events: EngineEvent[]) {
   const p = s.phase;
   if (p.t !== "day") return;
@@ -625,7 +894,11 @@ function resolveVote(s: GameState, events: EngineEvent[]) {
   const ballots = [...s.collect.voteBallots];
   s.collect.voteBallots = [];
   const candidates = round === 1 ? aliveSeats(s) : (p.pkCandidates ?? []).filter((c) => seatState(s, c).alive);
-  const t = tally(ballots, candidates);
+  // 警长 1.5 票（revote 时警长若是 PK 候选不投票，其权重自然不生效）
+  const weights = s.sheriff ? ({ [s.sheriff]: s.config.sheriff.extraVote } as Record<number, number>) : undefined;
+  const t = s.sheriff
+    ? weightedTally(ballots, candidates, (voter) => (voter === s.sheriff ? s.config.sheriff.extraVote : 1))
+    : tally(ballots, candidates);
 
   let eliminated: Seat | null = null;
   let pk: Seat[] = [];
@@ -636,7 +909,7 @@ function resolveVote(s: GameState, events: EngineEvent[]) {
   }
   // round2 仍平 -> 平安日（eliminated=null, pk=[]）
 
-  s.votes.push({ day: p.no, round, ballots, eliminated, pkCandidates: pk });
+  s.votes.push({ day: p.no, round, ballots, eliminated, pkCandidates: pk, weights });
   events.push(
     ...pushEvent(
       s,
@@ -666,6 +939,10 @@ function resolveVote(s: GameState, events: EngineEvent[]) {
     if (st.role === "hunter") {
       // 遗言后开枪：若遗言在队列则以遗言为先，否则直接开枪
       queue.push({ kind: "hunter", seat: eliminated, reason: "vote" });
+    }
+    // 警长被放逐：遗言后移交警徽（killSeat 时队列未就绪，在此补挂）
+    if (s.sheriff === eliminated && s.config.sheriff.transferOnDeath) {
+      queue.push({ kind: "sheriff_transfer", seat: eliminated });
     }
     p.step = "aftermath";
     p.queue = queue;

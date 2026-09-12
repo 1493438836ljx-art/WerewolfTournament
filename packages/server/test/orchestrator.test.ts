@@ -132,6 +132,8 @@ for line in sys.stdin:
         send({"v":1,"in_reply_to":rid,"type":"ready","agent_name":"bad-vote"})
     elif t=="vote_request":
         send({"v":1,"in_reply_to":rid,"type":"vote","target":99})  # 非法座位
+    elif t=="sheriff_vote_request":
+        send({"v":1,"in_reply_to":rid,"type":"sheriff_vote","target":99})  # 非法座位
     elif t in ("day_speech_request","pk_speech_request"):
         send({"v":1,"in_reply_to":rid,"type":"speech","text":"我是好人"})
     elif t=="last_words_request":

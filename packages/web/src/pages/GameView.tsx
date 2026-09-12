@@ -10,9 +10,11 @@ type UiEvent =
   | { t: "dawn"; night: number; deaths: number[] }
   | { t: "hunter"; by: number; target: number | null }
   | { t: "order"; order: number[] }
-  | { t: "speech" | "pk" | "lastwords"; seat: number; text: string }
+  | { t: "speech" | "pk" | "campaign" | "lastwords"; seat: number; text: string }
   | { t: "timeout"; seat: number; which: string }
-  | { t: "vote"; revote?: boolean; tally: Array<{ voter: number; target: number | null }>; eliminated: number | null; pk: number[] }
+  | { t: "vote"; revote?: boolean; tally: Array<{ voter: number; target: number | null }>; eliminated: number | null; pk: number[]; sheriff?: boolean }
+  | { t: "sheriffElected"; seat: number | null }
+  | { t: "sheriffTransfer"; from: number; to: number | null }
   | { t: "dq"; seat: number; reason: string }
   | { t: "win"; faction: string; reason: string }
   | { t: "reveal"; seats: Array<{ seat: number; role: string }> };
@@ -29,9 +31,14 @@ function fromBusEvent(kind: string, payload: Record<string, unknown>): UiEvent |
     case "speech_order":
       return { t: "order", order: p.order };
     case "speech":
+      if (p.kind === "campaign") return { t: "campaign", seat: p.seat, text: p.text };
       return { t: p.kind === "pk" ? "pk" : "speech", seat: p.seat, text: p.text };
     case "last_words":
       return { t: "lastwords", seat: p.seat, text: p.text };
+    case "sheriff_elected":
+      return { t: "sheriffElected", seat: p.seat };
+    case "sheriff_transfer":
+      return { t: "sheriffTransfer", from: p.from, to: p.to };
     case "hunter_shot":
       return { t: "hunter", by: p.by, target: p.target };
     case "timeout_default":
@@ -39,7 +46,14 @@ function fromBusEvent(kind: string, payload: Record<string, unknown>): UiEvent |
     case "player_disqualified":
       return { t: "dq", seat: p.seat, reason: p.reason };
     case "vote_result":
-      return { t: "vote", revote: p.round === 2, tally: p.tally, eliminated: p.eliminated, pk: p.pk_candidates ?? [] };
+      return {
+        t: "vote",
+        revote: p.round === 2,
+        tally: p.tally,
+        eliminated: p.eliminated,
+        pk: p.pk_candidates ?? [],
+        sheriff: !!p.sheriff,
+      };
     case "win":
       return { t: "win", faction: p.faction, reason: p.reason };
     case "reveal":
@@ -146,14 +160,31 @@ export function GameView() {
         break;
       case "speech":
       case "pk":
+      case "campaign":
       case "lastwords":
         add({
           kind: "msg",
-          who: `${ev.seat} 号 · ${ev.t === "pk" ? "PK 辩词" : ev.t === "lastwords" ? "遗言" : "发言"}`,
+          who: `${ev.seat} 号 · ${ev.t === "pk" ? "PK 辩词" : ev.t === "campaign" ? "竞选发言" : ev.t === "lastwords" ? "遗言" : "发言"}`,
           text: ev.text,
-          cls: ev.t === "pk" ? "pk" : ev.t === "lastwords" ? "lastwords" : undefined,
+          cls: ev.t === "pk" || ev.t === "campaign" ? "pk" : ev.t === "lastwords" ? "lastwords" : undefined,
         });
         setSpeaking(ev.seat);
+        break;
+      case "sheriffElected":
+        add({
+          kind: "sys",
+          icon: "trophy",
+          html: ev.seat != null ? <><span className="num">{ev.seat}</span> 号当选警长（放逐投票 1.5 票）</> : <>警长竞选平票 · 本局无警徽</>,
+        });
+        break;
+      case "sheriffTransfer":
+        add({
+          kind: "sys",
+          icon: "trophy",
+          html: ev.to != null
+            ? <>警徽移交：<span className="num">{ev.from}</span> 号 → <span className="num">{ev.to}</span> 号</>
+            : <><span className="num">{ev.from}</span> 号撕掉警徽</>,
+        });
         break;
       case "timeout":
         add({
@@ -170,13 +201,17 @@ export function GameView() {
         break;
       case "vote": {
         const eliminated = ev.eliminated;
-        const note = ev.pk.length
-          ? `平票：${ev.pk.join("、")} 号进入 PK 辩词`
-          : eliminated != null
-            ? `${eliminated} 号被放逐${ev.revote ? "（PK 者不参与再投票）" : ""}`
-            : "平安日，无人出局";
+        const note = ev.sheriff
+          ? ev.pk.length
+            ? `警长竞选平票：${ev.pk.join("、")} 号进入 PK`
+            : "警长竞选投票完成"
+          : ev.pk.length
+            ? `平票：${ev.pk.join("、")} 号进入 PK 辩词`
+            : eliminated != null
+              ? `${eliminated} 号被放逐${ev.revote ? "（PK 者不参与再投票）" : ""}`
+              : "平安日，无人出局";
         add({ kind: "vote", revote: ev.revote, tally: ev.tally, note });
-        if (eliminated != null) setDeadMap((d) => ({ ...d, [eliminated]: "vote" }));
+        if (eliminated != null && !ev.sheriff) setDeadMap((d) => ({ ...d, [eliminated]: "vote" }));
         setSpeaking(null);
         break;
       }

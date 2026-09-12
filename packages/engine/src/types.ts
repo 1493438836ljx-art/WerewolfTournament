@@ -18,6 +18,8 @@ export type EngineEventKind =
   | "game_started"
   | "night_begun"
   | "speech_order"
+  | "sheriff_elected"
+  | "sheriff_transfer"
   | "wolf_target_locked"
   | "seer_result"
   | "witch_heal_used"
@@ -47,27 +49,39 @@ export interface SeatState {
 // ---------- 阶段 ----------
 export type Phase =
   | { t: "night"; no: number }
-  /** 夜间结算：猎人枪/遗言 按队列依次处理 */
+  /** 夜间结算：猎人枪/遗言/警徽移交 按队列依次处理 */
   | { t: "dawn"; no: number; queue: DawnQueueItem[] }
   | {
       t: "day";
       no: number;
-      step: "speech" | "pk_speech" | "vote" | "revote" | "aftermath";
+      step:
+        | "campaign_run"
+        | "campaign_speech"
+        | "sheriff_vote"
+        | "sheriff_pk_speech"
+        | "sheriff_revote"
+        | "speech"
+        | "pk_speech"
+        | "vote"
+        | "revote"
+        | "aftermath";
       order?: Seat[];
       cursor?: number;
       pkCandidates?: Seat[];
-      /** aftermath：出局遗言 + 猎人枪 的待处理队列 */
+      /** 两轮发言的当前轮次（1=陈述，2=反驳） */
+      speechRound?: number;
+      /** aftermath：出局遗言 + 猎人枪 + 警徽移交 的待处理队列 */
       queue?: DawnQueueItem[];
       /** 本轮投票请求是否已发出（收齐判定用） */
       voteIssued?: boolean;
       voteRound?: number;
-      voteVoters?: number;
     }
   | { t: "game_over" };
 
 export type DawnQueueItem =
   | { kind: "hunter"; seat: Seat; reason: "wolf" | "vote" | "shot" }
-  | { kind: "last_words"; seat: Seat; cause: "night" | "vote" };
+  | { kind: "last_words"; seat: Seat; cause: "night" | "vote" }
+  | { kind: "sheriff_transfer"; seat: Seat };
 
 // ---------- pending 请求（引擎等待的外部输入；编排器翻译成协议消息）----------
 export interface AliveInfo {
@@ -92,9 +106,13 @@ export type PendingRequest = (
       healBlocksPoison: boolean;
     }
   | { kind: "hunter_shoot"; reason: "wolf" | "vote" | "shot"; targets: Seat[] }
-  | { kind: "speech"; day: number; order: Seat[]; pk: boolean }
-  | { kind: "vote"; day: number; round: number; candidates: Seat[]; abstainAllowed: boolean }
+  | { kind: "speech"; day: number; order: Seat[]; pk: boolean; round: number }
+  | { kind: "vote"; day: number; round: number; candidates: Seat[]; abstainAllowed: boolean; sheriffVote: boolean }
   | { kind: "last_words"; cause: "night" | "vote" }
+  | { kind: "sheriff_campaign"; candidates: Seat[] }
+  | { kind: "sheriff_speech"; order: Seat[] }
+  | { kind: "sheriff_vote"; candidates: Seat[]; abstainAllowed: boolean }
+  | { kind: "sheriff_transfer"; targets: Seat[] }
 ) &
   AliveInfo & { seat: Seat };
 
@@ -106,7 +124,11 @@ export type ResponsePayload =
   | { t: "hunter_shoot"; shoot: Seat | null }
   | { t: "speech"; text: string }
   | { t: "vote"; target: Seat | null }
-  | { t: "last_words"; text: string };
+  | { t: "last_words"; text: string }
+  | { t: "sheriff_campaign"; run: boolean }
+  | { t: "sheriff_speech"; text: string }
+  | { t: "sheriff_vote"; target: Seat | null }
+  | { t: "sheriff_transfer"; to: Seat | null };
 
 export type EngineAction =
   /** agent 回复（seat 须有 pending 请求，payload.t 与请求 kind 对应） */
@@ -123,6 +145,8 @@ export interface VoteRound {
   ballots: Array<{ voter: Seat; target: Seat | null }>;
   eliminated: Seat | null;
   pkCandidates: Seat[];
+  /** 警长票的权重（放逐投票时警长 1.5） */
+  weights?: Record<number, number>;
 }
 
 export interface GameState {
@@ -146,6 +170,10 @@ export interface GameState {
   winner?: { faction: Faction; reason: string };
   /** 当夜刀口（wolves 可见） */
   currentKill: Seat | null;
+  /** 当前警长（警长竞选机制） */
+  sheriff?: Seat;
+  /** 竞选人列表（第 1 天竞选流程中维护） */
+  sheriffCandidates: Seat[];
   /** 收集中间态（狼票/投票 ballots），收齐后结算；存于 state 以保证可重放 */
   collect: {
     wolfBallots: Array<{ voter: Seat; kill: Seat | null }>;

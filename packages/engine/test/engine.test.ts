@@ -50,24 +50,42 @@ function playNight(
   return s;
 }
 
-/** 白天快速路径：全部发言 -> 全部投票 target（单值或 seat->target 映射）。
+/** 白天快速路径：警长竞选（不上警）-> 全部发言（两轮）-> 全部投票 target。
  *  白天结束（进入下一夜的请求）即返回。 */
 function playDay(s: GameState, voteOf: (voter: Seat) => Seat): GameState {
   let guard = 0;
-  while (!s.winner && s.pending.length > 0 && guard++ < 200) {
+  while (!s.winner && s.pending.length > 0 && guard++ < 400) {
     const req = s.pending[0]!;
     if (req.kind === "speech") s = respond(s, req.seat, { t: "speech", text: `我是${req.seat}号，过` });
     else if (req.kind === "vote") s = respond(s, req.seat, { t: "vote", target: voteOf(req.seat) });
     else if (req.kind === "last_words") s = respond(s, req.seat, { t: "last_words", text: "遗言" });
     else if (req.kind === "hunter_shoot") s = respond(s, req.seat, { t: "hunter_shoot", shoot: null });
+    else if (req.kind === "sheriff_campaign") s = respond(s, req.seat, { t: "sheriff_campaign", run: false });
+    else if (req.kind === "sheriff_speech") s = respond(s, req.seat, { t: "sheriff_speech", text: "竞选发言" });
+    else if (req.kind === "sheriff_vote") s = respond(s, req.seat, { t: "sheriff_vote", target: req.candidates[0] ?? null });
+    else if (req.kind === "sheriff_transfer") s = respond(s, req.seat, { t: "sheriff_transfer", to: null });
     else break; // 夜晚请求（wolf_kill/seer/witch）—— 白天结束
   }
-  if (guard >= 200) throw new Error("playDay guard");
+  if (guard >= 400) throw new Error("playDay guard");
   return s;
 }
 
 const lastEvent = (s: GameState, kind: string) => [...s.log].reverse().find((e) => e.kind === kind);
 const deaths = (s: GameState) => (lastEvent(s, "dawn_deaths")?.payload as { deaths: Seat[] }).deaths;
+
+/** 警长竞选快速路径：全员不上警 -> 本局无警长 -> 进入正式发言 */
+function playCampaign(s: GameState): GameState {
+  let guard = 0;
+  while (!s.winner && s.pending.length > 0 && guard++ < 30) {
+    const req = s.pending[0]!;
+    if (req.kind === "sheriff_campaign") s = respond(s, req.seat, { t: "sheriff_campaign", run: false });
+    else if (req.kind === "sheriff_speech") s = respond(s, req.seat, { t: "sheriff_speech", text: "竞选" });
+    else if (req.kind === "sheriff_vote") s = respond(s, req.seat, { t: "sheriff_vote", target: req.candidates[0] ?? null });
+    else if (req.kind === "sheriff_transfer") s = respond(s, req.seat, { t: "sheriff_transfer", to: null });
+    else break;
+  }
+  return s;
+}
 
 // ---------- 夜晚结算矩阵 ----------
 describe("夜晚结算", () => {
@@ -164,6 +182,9 @@ describe("猎人", () => {
     while (!s.winner && s.pending.length && guard++ < 100) {
       const req = s.pending[0]!;
       if (req.seat === 7 && req.kind === "last_words") s = respond(s, 7, { t: "last_words", text: "LW" });
+      else if (req.kind === "sheriff_campaign") s = respond(s, req.seat, { t: "sheriff_campaign", run: false });
+      else if (req.kind === "sheriff_speech") s = respond(s, req.seat, { t: "sheriff_speech", text: "竞选" });
+      else if (req.kind === "sheriff_vote") s = respond(s, req.seat, { t: "sheriff_vote", target: req.candidates[0] ?? null });
       else if (req.kind === "speech") s = respond(s, req.seat, { t: "speech", text: "过" });
       else if (req.kind === "vote") s = respond(s, req.seat, { t: "vote", target: 6 });
       else if (req.kind === "last_words") s = respond(s, req.seat, { t: "last_words", text: "LW" });
@@ -207,6 +228,7 @@ describe("投票", () => {
     let s = mk();
     s = playNight(s, { kill: 7, check: 8, heal: false });
     s = respond(s, 7, { t: "last_words", text: "LW" });
+    s = playCampaign(s);
     // 8 人投票（7 已死）：1,2,3,4 -> 8；5,6,8,9 -> 9 => 4:4 平票 PK(8,9)
     let guard = 0;
     while (!s.winner && s.pending.length && guard++ < 300) {
@@ -279,6 +301,7 @@ describe("超时默认", () => {
     s = playNight(s, { kill: 7, check: 8, heal: false });
     // 处理死者遗言
     s = respond(s, 7, { t: "last_words", text: "LW" });
+    s = playCampaign(s);
     // 第一个发言者超时
     const req = s.pending.find((p) => p.kind === "speech")!;
     s = reduce(s, { t: "timeout", seat: req.seat }).state;
@@ -423,7 +446,133 @@ describe("边界与防御", () => {
     let s = mk();
     s = playNight(s, { kill: 7, check: 8, heal: false });
     s = respond(s, 7, { t: "last_words", text: "LW" });
+    s = playCampaign(s);
     const req = s.pending.find((p) => p.kind === "speech")!;
     expect(req.alive.sort()).toEqual(aliveSeats(s).sort());
+  });
+});
+
+// ---------- 警长竞选与两轮发言 ----------
+describe("警长竞选", () => {
+  it("多人上警 -> 竞选发言 -> 投票当选；警长 1.5 票决胜", () => {
+    let s = mk();
+    s = playNight(s, { kill: 7, check: 8, heal: false });
+    s = respond(s, 7, { t: "last_words", text: "LW" });
+    // 白1竞选：全员上警（逐个问）
+    let guard = 0;
+    while (guard++ < 40) {
+      const req = s.pending[0];
+      if (!req) break;
+      if (req.kind === "sheriff_campaign") s = respond(s, req.seat, { t: "sheriff_campaign", run: true });
+      else if (req.kind === "sheriff_speech") s = respond(s, req.seat, { t: "sheriff_speech", text: "选我" });
+      else break;
+    }
+    // 竞选投票：全员投 4 号（预言家）当选
+    guard = 0;
+    while (guard++ < 20) {
+      const req = s.pending[0];
+      if (!req) break;
+      if (req.kind === "sheriff_vote") s = respond(s, req.seat, { t: "sheriff_vote", target: 4 });
+      else break;
+    }
+    expect(s.sheriff).toBe(4);
+    expect(lastEvent(s, "sheriff_elected")?.payload).toMatchObject({ seat: 4 });
+
+    // 正式发言顺序：警长(4)下家起
+    const order = (lastEvent(s, "speech_order")?.payload as { order: Seat[] }).order;
+    expect(order[0]).toBe(5);
+
+    // 发言（两轮）+ 投票：警长 4 的 1.5 票决定性 —— 4 投 6，其余分票
+    guard = 0;
+    while (!s.winner && s.pending.length && guard++ < 60) {
+      const req = s.pending[0]!;
+      if (req.kind === "speech") s = respond(s, req.seat, { t: "speech", text: "过" });
+      else if (req.kind === "vote") {
+        // 1,2,3 -> 5（3 票）；5,8,9 -> 6（3 票）；警长 4 -> 6（1.5 票）
+        // => 6 号 4.5 票 > 5 号 3 票，警长权重决胜，6 出局
+        const target: Seat = req.seat <= 3 ? 5 : 6;
+        s = respond(s, req.seat, { t: "vote", target });
+      } else if (req.kind === "last_words") s = respond(s, req.seat, { t: "last_words", text: "LW" });
+      else if (req.kind === "hunter_shoot") s = respond(s, req.seat, { t: "hunter_shoot", shoot: null });
+      else break;
+    }
+    const v1 = s.votes.find((v) => v.day === 1 && v.round === 1)!;
+    expect(v1.eliminated).toBe(6); // 警长 1.5 票决胜
+    expect(v1.weights).toMatchObject({ 4: 1.5 });
+  });
+
+  it("全员弃票 -> 本局无警长", () => {
+    let s = mk();
+    s = playNight(s, { kill: 7, check: 8, heal: false });
+    s = respond(s, 7, { t: "last_words", text: "LW" });
+    let guard = 0;
+    while (guard++ < 40) {
+      const req = s.pending[0];
+      if (!req) break;
+      if (req.kind === "sheriff_campaign") s = respond(s, req.seat, { t: "sheriff_campaign", run: true });
+      else if (req.kind === "sheriff_speech") s = respond(s, req.seat, { t: "sheriff_speech", text: "选我" });
+      else if (req.kind === "sheriff_vote") s = respond(s, req.seat, { t: "sheriff_vote", target: null });
+      else break;
+    }
+    expect(s.sheriff).toBeUndefined();
+    expect(lastEvent(s, "sheriff_elected")?.payload).toMatchObject({ seat: null });
+  });
+
+  it("警长被放逐：遗言后移交警徽", () => {
+    let s = mk();
+    s = playNight(s, { kill: 7, check: 8, heal: false });
+    s = respond(s, 7, { t: "last_words", text: "LW" });
+    // 竞选：4 当选
+    let guard = 0;
+    while (guard++ < 60) {
+      const req = s.pending[0];
+      if (!req) break;
+      if (req.kind === "sheriff_campaign") s = respond(s, req.seat, { t: "sheriff_campaign", run: req.seat === 4 });
+      else if (req.kind === "sheriff_speech") s = respond(s, req.seat, { t: "sheriff_speech", text: "选我" });
+      else if (req.kind === "sheriff_vote") s = respond(s, req.seat, { t: "sheriff_vote", target: 4 });
+      else break;
+    }
+    expect(s.sheriff).toBe(4);
+    // 白1 全员票出警长 4
+    guard = 0;
+    while (!s.winner && s.pending.length && guard++ < 80) {
+      const req = s.pending[0]!;
+      if (req.kind === "speech") s = respond(s, req.seat, { t: "speech", text: "过" });
+      else if (req.kind === "vote") s = respond(s, req.seat, { t: "vote", target: 4 });
+      else if (req.kind === "last_words") s = respond(s, req.seat, { t: "last_words", text: "LW" });
+      else if (req.kind === "sheriff_transfer") {
+        expect(req.seat).toBe(4);
+        s = respond(s, 4, { t: "sheriff_transfer", to: 8 });
+      } else if (req.kind === "hunter_shoot") s = respond(s, req.seat, { t: "hunter_shoot", shoot: null });
+      else break;
+    }
+    expect(seatState(s, 4).death?.cause).toBe("vote");
+    expect(s.sheriff).toBe(8);
+    expect(lastEvent(s, "sheriff_transfer")?.payload).toMatchObject({ from: 4, to: 8 });
+  });
+});
+
+describe("两轮发言", () => {
+  it("每个白天两轮发言且事件带轮次", () => {
+    let s = mk();
+    s = playNight(s, { kill: 7, check: 8, heal: false });
+    s = respond(s, 7, { t: "last_words", text: "LW" });
+    s = playCampaign(s);
+    const rounds = new Set<number>();
+    let guard = 0;
+    while (!s.winner && s.pending.length && guard++ < 100) {
+      const req = s.pending[0]!;
+      if (req.kind === "speech") {
+        rounds.add(req.round);
+        s = respond(s, req.seat, { t: "speech", text: "过" });
+      } else if (req.kind === "vote") s = respond(s, req.seat, { t: "vote", target: 1 });
+      else if (req.kind === "last_words") s = respond(s, req.seat, { t: "last_words", text: "LW" });
+      else if (req.kind === "hunter_shoot") s = respond(s, req.seat, { t: "hunter_shoot", shoot: null });
+      else if (req.kind === "sheriff_transfer") s = respond(s, req.seat, { t: "sheriff_transfer", to: null });
+      else break;
+    }
+    expect(rounds).toEqual(new Set([1, 2]));
+    const speechEvents = s.log.filter((e) => e.kind === "speech");
+    expect(speechEvents.some((e) => (e.payload as { round?: number }).round === 2)).toBe(true);
   });
 });

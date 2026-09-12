@@ -18,13 +18,31 @@ export const agentEventSchema = z.discriminatedUnion("kind", [
     kind: z.literal("speech_heard"),
     day: z.number().int().min(1),
     seat: seatSchema,
-    speech_kind: z.enum(["speech", "pk", "last_words"]),
+    speech_kind: z.enum(["speech", "pk", "campaign", "last_words"]),
+    /** 两轮制下的发言轮次 */
+    round: z.number().int().min(1).max(2).optional(),
     text: speechTextSchema,
+  }),
+  z.object({
+    kind: z.literal("sheriff_elected"),
+    day: z.number().int().min(1),
+    /** 当选警长；null = 平票无人当选（本局无警徽） */
+    seat: seatOrNullSchema,
+    tally: z.array(z.object({ voter: seatSchema, target: seatOrNullSchema })).optional(),
+  }),
+  z.object({
+    kind: z.literal("sheriff_transfer"),
+    /** 移交者（原警长，已死亡） */
+    from: seatSchema,
+    /** 接受者；null = 撕掉警徽 */
+    to: seatOrNullSchema,
   }),
   z.object({
     kind: z.literal("vote_result"),
     day: z.number().int().min(1),
     round: z.number().int().min(1),
+    /** 警长竞选投票（与放逐投票区分） */
+    sheriff: z.boolean().optional(),
     /** 逐一公开票型（voter -> target） */
     tally: z.array(z.object({ voter: seatSchema, target: seatOrNullSchema })),
     /** 被放逐的座位；平安日/未决为 null */

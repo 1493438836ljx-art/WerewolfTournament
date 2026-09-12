@@ -26,5 +26,13 @@ export function defaultAction(req: PendingRequest, rng: Rng): ResponsePayload {
     }
     case "last_words":
       return { t: "last_words", text: TIMEOUT_LAST_WORDS_TEXT };
+    case "sheriff_campaign":
+      return { t: "sheriff_campaign", run: false };
+    case "sheriff_speech":
+      return { t: "sheriff_speech", text: TIMEOUT_SPEECH_TEXT };
+    case "sheriff_vote":
+      return { t: "sheriff_vote", target: null };
+    case "sheriff_transfer":
+      return { t: "sheriff_transfer", to: null };
   }
 }
