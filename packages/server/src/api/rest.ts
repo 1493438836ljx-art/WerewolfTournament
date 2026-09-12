@@ -1,6 +1,6 @@
 // REST API：agents / tournaments / games / referee。
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, desc, eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { agents, gameEvents, games, gameSeats, llmCalls, scores, tournaments } from "../db/schema.js";
 import { getAgent, listAgents, registerAgent, removeAgent, scanAndRegister, updateSelfcheck } from "../agents/registry.js";
@@ -28,7 +28,28 @@ export function registerRest(app: FastifyInstance, gameService: GameService, opt
       .from(agents)
       .leftJoin(users, eq(agents.ownerId, users.id))
       .orderBy(agents.createdAt);
-    return rows;
+    // 全局积分聚合（跨所有比赛）：积分/胜场/总局数/MVP
+    const agg = await db
+      .select({
+        agentId: scores.agentId,
+        totalPoints: sql<number>`sum(${scores.points})`,
+        wins: sql<number>`sum(case when ${scores.breakdownJson}->>'base' = '3' then 1 else 0 end)`,
+        games: sql<number>`count(*)`,
+        mvps: sql<number>`sum(case when ${scores.mvp} then 1 else 0 end)`,
+      })
+      .from(scores)
+      .groupBy(scores.agentId);
+    const byAgent = new Map(agg.map((a) => [a.agentId, a]));
+    return rows.map((r) => {
+      const a = byAgent.get(r.id);
+      return {
+        ...r,
+        totalPoints: a ? Number(a.totalPoints ?? 0) : 0,
+        wins: a ? Number(a.wins ?? 0) : 0,
+        games: a ? Number(a.games ?? 0) : 0,
+        mvps: a ? Number(a.mvps ?? 0) : 0,
+      };
+    });
   });
 
   app.post("/api/agents/scan", { preHandler: requireAuth("admin") }, async () => scanAndRegister(opts.agentsRoot));

@@ -36,7 +36,15 @@ export function AgentsPage() {
   };
 
   const refresh = useCallback(() => {
-    api.listAgents().then(setAgents).catch(() => {});
+    api
+      .listAgents()
+      .then((rows) => {
+        // 按积分排名：有分者降序（同分比胜场、MVP），无分者保持注册序在后
+        const scored = rows.filter((a) => a.games > 0).sort((x, y) => y.totalPoints - x.totalPoints || y.wins - x.wins || y.mvps - x.mvps);
+        const unscored = rows.filter((a) => a.games === 0);
+        setAgents([...scored, ...unscored]);
+      })
+      .catch(() => {});
   }, []);
   useEffect(() => {
     refresh();
@@ -115,26 +123,29 @@ export function AgentsPage() {
             <table className="ds-table">
               <thead>
                 <tr>
+                  <th>#</th>
                   <th>名称</th>
                   <th>上传者</th>
-                  <th>提交目录</th>
+                  <th className="num-col">积分</th>
                   <th>语言 · 网络</th>
-                  <th>资源</th>
                   <th>连通性自检</th>
                   <th>延迟</th>
                   <th>操作</th>
                 </tr>
               </thead>
               <tbody>
-                {agents.map((a) => {
+                {agents.map((a, idx) => {
                   const ck = checks[a.id] ?? {
                     status: a.selfcheckStatus,
                     latency: a.selfcheckDetail?.latencyMs ?? null,
                     error: a.selfcheckDetail?.error,
                   };
                   const mf = a.manifestJson;
+                  const ranked = a.games > 0;
+                  const rank = ranked ? agents.slice(0, idx).filter((x) => x.games > 0).length + 1 : 0;
                   return (
                     <tr key={a.id}>
+                      <td className="num">{ranked ? `#${rank}` : "—"}</td>
                       <td className="num">{a.name}</td>
                       <td>
                         {a.ownerName ? (
@@ -143,14 +154,20 @@ export function AgentsPage() {
                           <span className="tag st-ok">平台</span>
                         )}
                       </td>
-                      <td className="meta" style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }} title={a.dir}>
-                        {shortDir(a.dir)}
+                      <td className="num-col">
+                        {ranked ? (
+                          <>
+                            <strong>{a.totalPoints}</strong>
+                            <div className="meta" style={{ fontSize: 11, color: "var(--muted)" }}>
+                              {a.wins}/{a.games} 胜 · MVP {a.mvps}
+                            </div>
+                          </>
+                        ) : (
+                          <span className="meta">未参赛</span>
+                        )}
                       </td>
                       <td>
                         {mf ? `${mf.language.charAt(0).toUpperCase()}${mf.language.slice(1)} · ${mf.network}` : "—"}
-                      </td>
-                      <td className="meta">
-                        {mf ? `${mf.resources.memory_mb}MB · ${mf.resources.cpus} CPU` : "—"}
                       </td>
                       <td>
                         {ck.status === "busy" ? (

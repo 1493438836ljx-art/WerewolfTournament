@@ -12,6 +12,10 @@ export interface AgentRow {
   dir: string;
   ownerId: string | null;
   ownerName: string | null;
+  totalPoints: number;
+  wins: number;
+  games: number;
+  mvps: number;
   manifestJson: AgentManifest;
   selfcheckStatus: string;
   selfcheckDetail: { ok?: boolean; latencyMs?: number; error?: string } | null;
