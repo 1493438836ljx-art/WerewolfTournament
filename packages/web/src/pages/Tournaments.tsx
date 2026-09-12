@@ -132,7 +132,9 @@ export function TournamentsPage() {
                 {t.name}
               </h1>
               <p className="lead">
-                {KIND_TXT[(t.kind as Kind) ?? "training"]} · 对局 {doneGames}/{totalGames} · 座位与角色由种子随机决定
+                {KIND_TXT[(t.kind as Kind) ?? "training"]} ·{" "}
+                {totalGames > 1 ? `${totalGames} 局（已完成 ${doneGames}）` : totalGames === 1 && doneGames === 1 ? "已结束" : totalGames === 1 ? "进行中" : "未开始"}
+                {" "}· 座位与角色由种子随机决定
               </p>
             </div>
             <div className="row" style={{ gap: 10 }}>
@@ -150,7 +152,7 @@ export function TournamentsPage() {
 
           <div className="grid-2" style={{ alignItems: "start" }}>
             <div className="card">
-              <h2 className="panel-title">对局{selected.games.length > 1 ? `（${selected.games.length} 局 · 点击切换下方观战）` : "（下方实时观战/回放）"}</h2>
+              <h2 className="panel-title">对局{selected.games.length > 1 ? ` · ${selected.games.length} 局，点击切换下方观战` : " · 下方实时观战/回放"}</h2>
               <div className="table-wrap">
                 <table className="ds-table">
                   <thead>
@@ -164,11 +166,11 @@ export function TournamentsPage() {
                     {selected.games.map((g) => (
                       <tr
                         key={g.id}
-                        style={{ cursor: "pointer" }}
+                        style={{ cursor: selected.games.length > 1 ? "pointer" : "default" }}
                         className={g.id === watchId ? "sel-row" : undefined}
-                        onClick={() => setWatchId(g.id)}
+                        onClick={() => selected.games.length > 1 && setWatchId(g.id)}
                       >
-                        <td className="num">第 {g.seq} 局</td>
+                        <td className="num">{selected.games.length > 1 ? `#${g.seq}` : "对局"}</td>
                         <td>
                           <StatusTag status={g.status} />
                         </td>

@@ -367,7 +367,7 @@ export function GamePanel({ gameId: fixedId }: { gameId: string }) {
     <div>
       <div className="row-between" style={{ marginBottom: 12, flexWrap: "wrap", gap: 12 }}>
         <h2 className="panel-title" style={{ margin: 0 }}>
-          {game ? `第 ${game.seq} 局 · ${isLive ? "直播中" : "回放"}` : "对局面板"}
+          {isLive ? "对局 · 直播中" : game ? "对局 · 回放" : "对局"}
           <span className="meta" style={{ marginLeft: 10, fontWeight: 400 }}>
             板型 9 人 · 屠边制 · 种子 <span className="num">{game?.id.slice(5, 13) ?? "…"}</span>
           </span>
