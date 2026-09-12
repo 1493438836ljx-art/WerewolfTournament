@@ -10,6 +10,7 @@ import { eq } from "drizzle-orm";
 import { db, pool } from "../src/db/index.js";
 import { users } from "../src/db/schema.js";
 import { hashPassword, registerAuthRoutes } from "../src/auth.js";
+import { initReferee } from "../src/llmreferee.js";
 import { registerRest } from "../src/api/rest.js";
 import { registerUploadRoute } from "../src/upload.js";
 import { GameService } from "../src/game/service.js";
@@ -22,6 +23,7 @@ async function buildApp(uploadsRoot: string): Promise<FastifyInstance> {
   const app = Fastify();
   const bus = new EventBus();
   const svc = new GameService(bus, { agentsRoot: "/tmp", sandbox: "none" });
+  await initReferee(); // 裁判模式切换端点依赖单例
   registerAuthRoutes(app);
   registerRest(app, svc, { agentsRoot: "/tmp", sandbox: "none" });
   registerUploadRoute(app, { uploadsRoot });
