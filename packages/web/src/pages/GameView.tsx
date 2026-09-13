@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { api, type GameRow } from "../api.js";
 import { useTopic, type BusEvent } from "../ws.js";
-import { CAUSE_NAME, ICONS, ROLE_CLS, ROLE_NAME, toast } from "../components.js";
+import { CAUSE_NAME, ICONS, ROLE_CLS, ROLE_NAME, StatusTag, toast } from "../components.js";
 
 /* ─── 统一 UI 事件（WS 实时与 DB 回放共用同一转换） ─── */
 type UiEvent =
@@ -367,21 +367,24 @@ export function GamePanel({ gameId: fixedId }: { gameId: string }) {
     <div>
       <div className="row-between" style={{ marginBottom: 12, flexWrap: "wrap", gap: 12 }}>
         <h2 className="panel-title" style={{ margin: 0 }}>
-          {isLive ? "对局 · 直播中" : game ? "对局 · 回放" : "对局"}
+          对局
           <span className="meta" style={{ marginLeft: 10, fontWeight: 400 }}>
             板型 9 人 · 屠边制 · 种子 <span className="num">{game?.id.slice(5, 13) ?? "…"}</span>
           </span>
         </h2>
-        {isLive ? (
-          <span className="tag st-warn">
-            <span className="dot" />
-            直播中 · 旁观视角仅见公开事件
-          </span>
-        ) : (
-          <span className="progress-note">
-            事件 {gIdx} / {events.length}
-          </span>
-        )}
+        <div className="row" style={{ gap: 8 }}>
+          {game && <StatusTag status={game.status} />}
+          {game?.winnerFaction && (
+            <span className={`tag ${game.winnerFaction === "werewolf" ? "role-wolf" : "st-ok"}`}>
+              {game.winnerFaction === "werewolf" ? "狼人胜" : "好人胜"}
+            </span>
+          )}
+          {!isLive && events.length > 0 && (
+            <span className="progress-note">
+              事件 {gIdx}/{events.length}
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="replay-bar" style={{ marginBottom: 12 }}>

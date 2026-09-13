@@ -169,47 +169,27 @@ export function TournamentsPage() {
             </div>
           </div>
 
-          <div className="grid-2" style={{ alignItems: "start" }}>
-            <div className="card">
-              <h2 className="panel-title">对局{selected.games.length > 1 ? ` · ${selected.games.length} 局，点击切换下方观战` : " · 下方实时观战/回放"}</h2>
-              <div className="table-wrap">
-                <table className="ds-table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>状态</th>
-                      <th>胜方</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selected.games.map((g) => (
-                      <tr
-                        key={g.id}
-                        style={{ cursor: selected.games.length > 1 ? "pointer" : "default" }}
-                        className={g.id === watchId ? "sel-row" : undefined}
-                        onClick={() => selected.games.length > 1 && setWatchId(g.id)}
-                      >
-                        <td className="num">{selected.games.length > 1 ? `#${g.seq}` : "对局"}</td>
-                        <td>
-                          <StatusTag status={g.status} />
-                        </td>
-                        <td>
-                          {g.winnerFaction ? (
-                            <span className={`tag ${g.winnerFaction === "werewolf" ? "role-wolf" : "st-ok"}`}>
-                              {g.winnerFaction === "werewolf" ? "狼人" : "好人"}
-                            </span>
-                          ) : (
-                            <span className="meta">—</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+          {selected.games.length > 1 && (
+            <div className="row" style={{ gap: 10, marginBottom: 14 }}>
+              <span className="meta" style={{ fontSize: 12 }}>切换对局</span>
+              <span className="seg" role="group" aria-label="对局切换">
+                {selected.games.map((g) => (
+                  <button key={g.id} className={g.id === effectiveWatch ? "active" : ""} onClick={() => setWatchId(g.id)}>
+                    #{g.seq}
+                    {g.status === "done" ? (g.winnerFaction === "werewolf" ? " 狼" : " 好") : g.status === "running" ? " ·" : ""}
+                  </button>
+                ))}
+              </span>
             </div>
+          )}
 
-            <div className="card">
+            {effectiveWatch && (
+            <div>
+              <GamePanel gameId={effectiveWatch} />
+            </div>
+          )}
+
+          <div className="card">
               <h2 className="panel-title">积分榜</h2>
               {board.length === 0 ? (
                 <p className="empty-hint">对局完成后生成积分</p>
@@ -250,14 +230,8 @@ export function TournamentsPage() {
                   </p>
                 </>
               )}
-            </div>
           </div>
 
-          {effectiveWatch && (
-            <div style={{ marginTop: 20 }}>
-              <GamePanel gameId={effectiveWatch} />
-            </div>
-          )}
         </div>
       </section>
     );
