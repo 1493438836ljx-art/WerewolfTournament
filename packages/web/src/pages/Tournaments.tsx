@@ -390,7 +390,10 @@ export function TournamentsPage() {
                   />
                 </div>
                 <p className="meta dlg-note" style={{ fontSize: 11.5 }}>
-                  1 轮 = 全部 {agents.length} 个 agent 各上场一局（9 人/局随机分组）· 多轮成绩更稳 · 名称自动生成
+                  {agents.length >= 9
+                    ? `1 轮 = 全部 ${agents.length} 个 agent 各上场一局（9 人/局随机分组，无重复）· 多轮成绩更稳`
+                    : `需要至少 9 个不同的已注册 agent（当前 ${agents.length} 个，无法创建）`}
+                  {" "}· 名称自动生成
                 </p>
               </>
             ) : (

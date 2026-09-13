@@ -44,13 +44,14 @@ describe("正式比赛编排 planOfficial", () => {
     }
   });
 
-  it("人数不足 9：单局多副本填充", () => {
-    const plan = planOfficial({ agentIds: ["a", "b", "c"], rounds: 1 });
-    expect(plan).toHaveLength(1);
-    expect(plan[0]!.seats.size).toBe(9);
+  it("人数不足 9：拒绝创建（一局不允许重复 agent）", () => {
+    expect(() => planOfficial({ agentIds: ["a", "b", "c"], rounds: 1 })).toThrow(/至少需要 9 个不同的/);
+    expect(() => planOfficial({ agentIds: ["a"], rounds: 1 })).toThrow();
   });
 
-  it("至少 2 人校验", () => {
-    expect(() => planOfficial({ agentIds: ["a"], rounds: 1 })).toThrow();
+  it("恰好 9 人 1 轮：单局且无重复", () => {
+    const plan = planOfficial({ agentIds: Array.from({ length: 9 }, (_, i) => `a${i}`), rounds: 1 });
+    expect(plan).toHaveLength(1);
+    expect(new Set(plan[0]!.seats.values()).size).toBe(9);
   });
 });

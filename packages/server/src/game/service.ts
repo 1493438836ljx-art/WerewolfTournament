@@ -64,7 +64,9 @@ export class GameService {
     let agentIds = cfg.agentIds;
     if (cfg.kind === "official") {
       agentIds = (await db.select({ id: agents.id }).from(agents)).map((r) => r.id);
-      if (agentIds.length < 2) throw new Error("正式比赛至少需要 2 个已注册 agent");
+      if (new Set(agentIds).size < 9) {
+        throw new Error(`正式比赛至少需要 9 个不同的已注册 agent（当前 ${new Set(agentIds).size} 个）`);
+      }
     }
     if (cfg.kind === "training") {
       // 训练赛：一场 = 一局，必须恰好 9 个不同 agent

@@ -70,7 +70,9 @@ export function planOfficial(opts: {
 }): GameAssignment[] {
   const seatCount = opts.seatCount ?? 9;
   const { agentIds } = opts;
-  if (agentIds.length < 2) throw new Error("正式比赛至少需要 2 个 agent");
+  if (new Set(agentIds).size < seatCount) {
+    throw new Error(`正式比赛至少需要 ${seatCount} 个不同的 agent（当前 ${new Set(agentIds).size} 个）`);
+  }
   const rounds = Math.max(1, Math.min(10, Math.round(opts.rounds)));
 
   const assignments: GameAssignment[] = [];
@@ -79,14 +81,6 @@ export function planOfficial(opts: {
     const shuffled = [...agentIds];
     const roundSeed = randomBytes(12).toString("hex");
     seededShuffle(shuffled, roundSeed);
-    if (agentIds.length < seatCount) {
-      // 人数不足一局：循环填充（全员同局）
-      const seed = randomBytes(12).toString("hex");
-      const seats = new Map<Seat, string>();
-      for (let i = 0; i < seatCount; i++) seats.set((i + 1) as Seat, shuffled[i % shuffled.length]!);
-      assignments.push({ seq: ++seq, gameId: `game-${seed.slice(0, 10)}`, seed, seats });
-      continue;
-    }
     const gamesInRound = Math.ceil(shuffled.length / seatCount);
     for (let g = 0; g < gamesInRound; g++) {
       const seed = randomBytes(12).toString("hex");
