@@ -9,6 +9,13 @@ type Kind = "training" | "official";
 
 const KIND_TXT: Record<Kind, string> = { training: "训练赛", official: "正式比赛" };
 
+function fmtTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 export function TournamentsPage() {
   const user = useAuth();
   const isAdmin = user?.role === "admin";
@@ -370,6 +377,10 @@ export function TournamentsPage() {
                     <tr>
                       <th>名称</th>
                       <th>状态</th>
+                      <th className="wrap-col">参赛 agent</th>
+                      <th>开始</th>
+                      <th>结束</th>
+                      <th>胜方</th>
                       <th>操作</th>
                     </tr>
                   </thead>
@@ -384,6 +395,39 @@ export function TournamentsPage() {
                         <td onClick={(e) => e.stopPropagation()}>
                           <StatusTag status={t.status} />
                         </td>
+                        <td className="wrap-col" onClick={(e) => e.stopPropagation()} title={t.agentNames?.join("、") ?? ""}>
+                          {t.agentNames?.length ? (
+                            <>
+                              {t.agentNames.slice(0, 4).map((n) => (
+                                <span key={n} className="tag st-pending" style={{ marginRight: 4 }}>
+                                  {n}
+                                </span>
+                              ))}
+                              {t.agentNames.length > 4 && <span className="meta">+{t.agentNames.length - 4}</span>}
+                            </>
+                          ) : (
+                            <span className="meta">—</span>
+                          )}
+                        </td>
+                        <td className="meta" onClick={(e) => e.stopPropagation()}>
+                          {fmtTime(t.startedAt)}
+                        </td>
+                        <td className="meta" onClick={(e) => e.stopPropagation()}>
+                          {fmtTime(t.endedAt)}
+                        </td>
+                        <td onClick={(e) => e.stopPropagation()}>
+                          {t.winners ? (
+                            <span className={`tag ${t.winners.werewolf > t.winners.village ? "role-wolf" : "st-ok"}`}>
+                              {t.winners.werewolf + t.winners.village === 1
+                                ? t.winners.werewolf
+                                  ? "狼人"
+                                  : "好人"
+                                : `狼 ${t.winners.werewolf} : 好 ${t.winners.village}`}
+                            </span>
+                          ) : (
+                            <span className="meta">—</span>
+                          )}
+                        </td>
                         <td onClick={(e) => e.stopPropagation()}>
                           {(isAdmin || t.createdBy === user?.id) && t.status === "running" && (
                             <button className="btn btn-secondary btn-sm" onClick={() => abort(t)}>
@@ -395,7 +439,7 @@ export function TournamentsPage() {
                     ))}
                     {visibleTours.length === 0 && (
                       <tr>
-                        <td colSpan={3} className="empty-hint">
+                        <td colSpan={7} className="empty-hint">
                           暂无{KIND_TXT[kindSel]}
                         </td>
                       </tr>

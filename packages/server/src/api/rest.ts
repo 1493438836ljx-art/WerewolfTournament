@@ -187,7 +187,30 @@ export function registerRest(app: FastifyInstance, gameService: GameService, opt
     }
   });
 
-  app.get("/api/tournaments", { preHandler: requireAuth() }, async () => db.select().from(tournaments));
+  app.get("/api/tournaments", { preHandler: requireAuth() }, async () => {
+    const ts = await db.select().from(tournaments);
+    // 参赛 agent 名单（configJson.agentIds -> 名称）
+    const allAgents = await db.select({ id: agents.id, name: agents.name }).from(agents);
+    const nameOf = new Map(allAgents.map((a) => [a.id, a.name]));
+    // 各比赛对局胜方聚合（单局制=唯一胜方；多局=计数）
+    const gs = await db.select({ tid: games.tournamentId, winner: games.winnerFaction }).from(games);
+    const winAgg = new Map<string, { werewolf: number; village: number }>();
+    for (const g of gs) {
+      if (!g.tid || !g.winner) continue;
+      const agg = winAgg.get(g.tid) ?? { werewolf: 0, village: 0 };
+      agg[g.winner as "werewolf" | "village"]++;
+      winAgg.set(g.tid, agg);
+    }
+    return ts.map((t) => {
+      const cfg = t.configJson as { agentIds?: string[] };
+      const winners = winAgg.get(t.id);
+      return {
+        ...t,
+        agentNames: (cfg.agentIds ?? []).map((id) => nameOf.get(id)).filter(Boolean),
+        winners,
+      };
+    });
+  });
 
   app.get("/api/tournaments/:id", { preHandler: requireAuth() }, async (req) => {
     const { id } = req.params as { id: string };

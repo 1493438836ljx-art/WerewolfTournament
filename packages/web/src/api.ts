@@ -36,6 +36,10 @@ export interface TournamentRow {
   kind: string;
   createdBy: string | null;
   status: string;
+  startedAt: string | null;
+  endedAt: string | null;
+  agentNames: string[];
+  winners: { werewolf: number; village: number } | null;
 }
 
 export interface LeaderRow {
