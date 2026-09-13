@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, type GameRow, type LeaderRow, type TournamentRow } from "../api.js";
 import { StatusTag, toast } from "../components.js";
@@ -34,6 +34,17 @@ export function TournamentsPage() {
   const [picked, setPicked] = useState<Record<string, boolean>>({});
   const [err, setErr] = useState("");
   const [creating, setCreating] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  const openCreate = () => setCreateOpen(true);
+  const closeCreate = () => setCreateOpen(false);
+  useEffect(() => {
+    const d = dialogRef.current;
+    if (!d) return;
+    if (createOpen && !d.open) d.showModal();
+    if (!createOpen && d.open) d.close();
+  }, [createOpen]);
   const [abortConfirm, setAbortConfirm] = useState<string | null>(null);
   const [watchId, setWatchId] = useState<string | null>(null);
   // 默认观看：进行中的局，否则第一局（比赛对象变化时自动跟随）
@@ -265,111 +276,26 @@ export function TournamentsPage() {
                 训练赛自由编排随时打；正式比赛全员参与、系统轮转安排所有人轮流上场，座位与角色由密码学种子决定。
               </p>
             </div>
-            <span className="seg" role="group" aria-label="比赛类型">
-              <button className={kindSel === "training" ? "active" : ""} onClick={() => setKindSel("training")}>
-                训练赛
-              </button>
-              <button className={kindSel === "official" ? "active" : ""} onClick={() => setKindSel("official")}>
-                正式比赛
-              </button>
-            </span>
+            <div className="row" style={{ gap: 12 }}>
+              <span className="seg" role="group" aria-label="比赛类型">
+                <button className={kindSel === "training" ? "active" : ""} onClick={() => setKindSel("training")}>
+                  训练赛
+                </button>
+                <button className={kindSel === "official" ? "active" : ""} onClick={() => setKindSel("official")}>
+                  正式比赛
+                </button>
+              </span>
+              {(isAdmin || kindSel === "training") && (
+                <button className="btn btn-primary" onClick={openCreate}>
+                  创建{KIND_TXT[kindSel]}
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
-        <div className="grid-1-2">
-          {isAdmin || kindSel === "training" ? (
-            <div className="card">
-              <h2 className="panel-title">创建{KIND_TXT[kindSel]}</h2>
-              <div className="stack" style={{ gap: 16 }}>
-                <p className="meta" style={{ fontSize: 12 }}>
-                  比赛名将自动生成：你的用户名 · 类型 · 时间
-                </p>
-
-                {kindSel === "official" ? (
-                  <>
-                    <div className="field">
-                      <label htmlFor="t-rounds">轮数（每轮所有 agent 轮流上场一局，1–10）</label>
-                      <input
-                        className="input num"
-                        id="t-rounds"
-                        type="number"
-                        min={1}
-                        max={10}
-                        value={rounds}
-                        onChange={(e) => setRounds(Math.max(1, Math.min(10, Number(e.target.value) || 1)))}
-                        style={{ width: 120 }}
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="t-conc">本场并发对局数（1–10）</label>
-                      <input
-                        className="input num"
-                        id="t-conc"
-                        type="number"
-                        min={1}
-                        max={10}
-                        value={concurrency}
-                        onChange={(e) => setConcurrency(Math.max(1, Math.min(10, Number(e.target.value) || 1)))}
-                        style={{ width: 120 }}
-                      />
-                    </div>
-                    <p className="meta" style={{ fontSize: 12.5, whiteSpace: "normal" }}>
-                      1 轮 = 所有 {agents.length} 个 agent 各上场打一局（每局 9 人桌，随机分组；尾局不足自动轮转补位）。
-                      轮数 = 重复多少个这样的周期（多轮分组更随机、成绩更稳）。
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <div className="field">
-                      <label>
-                        参赛 agent（{Object.values(picked).filter(Boolean).length}/9，须选满 9 个不同的 agent）
-                      </label>
-                      <div className="chips">
-                        {agents.map((a) => (
-                          <label key={a.id} className="chip">
-                            <input
-                              type="checkbox"
-                              checked={!!picked[a.id]}
-                              onChange={(e) => setPicked((p) => ({ ...p, [a.id]: e.target.checked }))}
-                            />
-                            <span className="num">{a.name}</span>
-                          </label>
-                        ))}
-                        {agents.length === 0 && <span className="meta">先到「选手 Agent」页注册</span>}
-                      </div>
-                    </div>
-                    <p className="meta" style={{ fontSize: 12 }}>
-                      {isAdmin
-                        ? "一场训练赛 = 一局，9 个不同 agent 同桌对打"
-                        : "约战制：至少包含你自己上传的一个 agent；其余对手任选（可用平台 bot 凑数）"}
-                    </p>
-                  </>
-                )}
-
-                {err && <p className="form-error">{err}</p>}
-                <div>
-                  <button
-                    className="btn btn-primary"
-                    onClick={create}
-                    disabled={creating || (kindSel === "training" && Object.values(picked).filter(Boolean).length !== 9)}
-                  >
-                    {creating ? "创建中…" : `创建${KIND_TXT[kindSel]}`}
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="card">
-              <h2 className="panel-title">正式比赛说明</h2>
-              <p className="meta" style={{ fontSize: 13, whiteSpace: "normal" }}>
-                正式比赛由管理员编排：所有通过自检的 agent 自动参赛，系统安排全员轮流上场。
-                你可以在右侧查看赛程、实时观战与积分榜。想练手？切到「训练赛」自己约一桌。
-              </p>
-            </div>
-          )}
-
-          <div className="stack" style={{ gap: 20 }}>
-            <div className="card">
+        <div className="stack" style={{ gap: 20 }}>
+          <div className="card">
               <h2 className="panel-title">{KIND_TXT[kindSel]}列表</h2>
               <div className="table-wrap">
                 <table className="ds-table">
@@ -450,7 +376,93 @@ export function TournamentsPage() {
             </div>
           </div>
         </div>
-      </div>
+
+      <dialog ref={dialogRef} onClick={(e) => e.target === dialogRef.current && closeCreate()}>
+        <div className="dlg-body" style={{ width: 520 }}>
+          <div className="row-between" style={{ marginBottom: 14 }}>
+            <p className="eyebrow" style={{ margin: 0 }}>CREATE · {kindSel === "official" ? "正式比赛（全员轮转）" : "训练赛（一局约战）"}</p>
+            <button className="btn btn-ghost btn-sm" onClick={closeCreate}>关闭</button>
+          </div>
+          <div className="stack" style={{ gap: 16 }}>
+            <p className="meta" style={{ fontSize: 12 }}>
+              比赛名将自动生成：你的用户名 · 类型 · 时间
+            </p>
+
+            {kindSel === "official" ? (
+              <>
+                <div className="field">
+                  <label htmlFor="t-rounds">轮数（每轮所有 agent 轮流上场一局，1–10）</label>
+                  <input
+                    className="input num"
+                    id="t-rounds"
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={rounds}
+                    onChange={(e) => setRounds(Math.max(1, Math.min(10, Number(e.target.value) || 1)))}
+                    style={{ width: 120 }}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="t-conc">本场并发对局数（1–10）</label>
+                  <input
+                    className="input num"
+                    id="t-conc"
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={concurrency}
+                    onChange={(e) => setConcurrency(Math.max(1, Math.min(10, Number(e.target.value) || 1)))}
+                    style={{ width: 120 }}
+                  />
+                </div>
+                <p className="meta" style={{ fontSize: 12.5, whiteSpace: "normal" }}>
+                  1 轮 = 所有 {agents.length} 个 agent 各上场打一局（每局 9 人桌，随机分组；尾局不足自动轮转补位）。
+                  轮数 = 重复多少个这样的周期（多轮分组更随机、成绩更稳）。
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="field">
+                  <label>
+                    参赛 agent（{Object.values(picked).filter(Boolean).length}/9，须选满 9 个不同的 agent）
+                  </label>
+                  <div className="chips" style={{ maxHeight: 220, overflowY: "auto" }}>
+                    {agents.map((a) => (
+                      <label key={a.id} className="chip">
+                        <input
+                          type="checkbox"
+                          checked={!!picked[a.id]}
+                          onChange={(e) => setPicked((p) => ({ ...p, [a.id]: e.target.checked }))}
+                        />
+                        <span className="num">{a.name}</span>
+                      </label>
+                    ))}
+                    {agents.length === 0 && <span className="meta">先到「选手 Agent」页注册</span>}
+                  </div>
+                </div>
+                <p className="meta" style={{ fontSize: 12 }}>
+                  {isAdmin
+                    ? "一场训练赛 = 一局，9 个不同 agent 同桌对打"
+                    : "约战制：至少包含你自己上传的一个 agent；其余对手任选（可用平台 bot 凑数）"}
+                </p>
+              </>
+            )}
+
+            {err && <p className="form-error">{err}</p>}
+            <div className="row" style={{ gap: 10 }}>
+              <button
+                className="btn btn-primary"
+                onClick={create}
+                disabled={creating || (kindSel === "training" && Object.values(picked).filter(Boolean).length !== 9)}
+              >
+                {creating ? "创建中…" : `创建并开赛`}
+              </button>
+              <button className="btn btn-secondary" onClick={closeCreate}>取消</button>
+            </div>
+          </div>
+        </div>
+      </dialog>
     </section>
   );
 }
