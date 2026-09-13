@@ -377,21 +377,22 @@ export function TournamentsPage() {
           </div>
         </div>
 
-      <dialog ref={dialogRef} onClick={(e) => e.target === dialogRef.current && closeCreate()}>
-        <div className="dlg-body" style={{ width: 520 }}>
-          <div className="row-between" style={{ marginBottom: 14 }}>
-            <p className="eyebrow" style={{ margin: 0 }}>CREATE · {kindSel === "official" ? "正式比赛（全员轮转）" : "训练赛（一局约战）"}</p>
-            <button className="btn btn-ghost btn-sm" onClick={closeCreate}>关闭</button>
-          </div>
-          <div className="stack" style={{ gap: 16 }}>
-            <p className="meta" style={{ fontSize: 12 }}>
-              比赛名将自动生成：你的用户名 · 类型 · 时间
+      <dialog ref={dialogRef} className="dlg-compact" onClick={(e) => e.target === dialogRef.current && closeCreate()}>
+        <div className="dlg-body">
+          <div className="row-between" style={{ marginBottom: 12 }}>
+            <p className="eyebrow" style={{ margin: 0 }}>
+              CREATE · {kindSel === "official" ? "正式比赛 · 全员轮转" : "训练赛 · 一局约战"}
             </p>
+            <button className="btn btn-ghost btn-sm" onClick={closeCreate}>
+              关闭
+            </button>
+          </div>
 
+          <div className="dlg-form">
             {kindSel === "official" ? (
               <>
                 <div className="field">
-                  <label htmlFor="t-rounds">轮数（每轮所有 agent 轮流上场一局，1–10）</label>
+                  <label htmlFor="t-rounds">轮数（1–10）</label>
                   <input
                     className="input num"
                     id="t-rounds"
@@ -400,11 +401,10 @@ export function TournamentsPage() {
                     max={10}
                     value={rounds}
                     onChange={(e) => setRounds(Math.max(1, Math.min(10, Number(e.target.value) || 1)))}
-                    style={{ width: 120 }}
                   />
                 </div>
                 <div className="field">
-                  <label htmlFor="t-conc">本场并发对局数（1–10）</label>
+                  <label htmlFor="t-conc">并发对局数（1–10）</label>
                   <input
                     className="input num"
                     id="t-conc"
@@ -413,21 +413,19 @@ export function TournamentsPage() {
                     max={10}
                     value={concurrency}
                     onChange={(e) => setConcurrency(Math.max(1, Math.min(10, Number(e.target.value) || 1)))}
-                    style={{ width: 120 }}
                   />
                 </div>
-                <p className="meta" style={{ fontSize: 12.5, whiteSpace: "normal" }}>
-                  1 轮 = 所有 {agents.length} 个 agent 各上场打一局（每局 9 人桌，随机分组；尾局不足自动轮转补位）。
-                  轮数 = 重复多少个这样的周期（多轮分组更随机、成绩更稳）。
+                <p className="meta dlg-note" style={{ fontSize: 11.5 }}>
+                  1 轮 = 全部 {agents.length} 个 agent 各上场一局（9 人/局随机分组）· 多轮成绩更稳 · 名称自动生成
                 </p>
               </>
             ) : (
               <>
-                <div className="field">
+                <div className="field field--full">
                   <label>
-                    参赛 agent（{Object.values(picked).filter(Boolean).length}/9，须选满 9 个不同的 agent）
+                    参赛 agent（{Object.values(picked).filter(Boolean).length}/9 · {isAdmin ? "选满 9 个不同的 agent" : "至少含你自己的一个，其余任选"}）
                   </label>
-                  <div className="chips" style={{ maxHeight: 220, overflowY: "auto" }}>
+                  <div className="chips" style={{ maxHeight: 200, overflowY: "auto" }}>
                     {agents.map((a) => (
                       <label key={a.id} className="chip">
                         <input
@@ -441,25 +439,23 @@ export function TournamentsPage() {
                     {agents.length === 0 && <span className="meta">先到「选手 Agent」页注册</span>}
                   </div>
                 </div>
-                <p className="meta" style={{ fontSize: 12 }}>
-                  {isAdmin
-                    ? "一场训练赛 = 一局，9 个不同 agent 同桌对打"
-                    : "约战制：至少包含你自己上传的一个 agent；其余对手任选（可用平台 bot 凑数）"}
-                </p>
               </>
             )}
 
-            {err && <p className="form-error">{err}</p>}
-            <div className="row" style={{ gap: 10 }}>
-              <button
-                className="btn btn-primary"
-                onClick={create}
-                disabled={creating || (kindSel === "training" && Object.values(picked).filter(Boolean).length !== 9)}
-              >
-                {creating ? "创建中…" : `创建并开赛`}
-              </button>
-              <button className="btn btn-secondary" onClick={closeCreate}>取消</button>
-            </div>
+            {err && <p className="form-error dlg-note">{err}</p>}
+          </div>
+
+          <div className="dlg-actions">
+            <button className="btn btn-secondary btn-sm" onClick={closeCreate}>
+              取消
+            </button>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={create}
+              disabled={creating || (kindSel === "training" && Object.values(picked).filter(Boolean).length !== 9)}
+            >
+              {creating ? "创建中…" : "创建并开赛"}
+            </button>
           </div>
         </div>
       </dialog>
