@@ -14,7 +14,9 @@ COPY packages/web/package.json packages/web/
 RUN pnpm install --frozen-lockfile || pnpm install
 COPY tsconfig.base.json ./
 COPY packages ./packages
-RUN pnpm --filter @wt/protocol --filter @wt/engine --filter @wt/llm run build \
+# 诊断 + 构建（分层便于缓存）
+RUN pnpm --filter @wt/protocol exec node ../../node_modules/tsup/dist/cli.js --version \
+ ; pnpm --filter @wt/protocol --filter @wt/engine --filter @wt/llm run build \
  && pnpm --filter @wt/web exec vite build
 
 # ─── 运行阶段 ───
