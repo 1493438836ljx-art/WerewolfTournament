@@ -10,6 +10,7 @@ import { registerWs } from "./api/ws.js";
 import { initReferee } from "./llmreferee.js";
 import { llmConfigFromEnv } from "@wt/llm";
 import { createLlmProxy, proxyForAgent } from "./llmproxy.js";
+import fastifyStatic from "@fastify/static";
 import { ensureAdminSeed, registerAuthRoutes } from "./auth.js";
 import { registerLlmConfigListener } from "./llmreferee.js";
 import { registerUploadRoute } from "./upload.js";
@@ -68,6 +69,22 @@ if (sandbox === "docker") {
 }
 
 await gameService.loadSettings();
+// 托管前端静态文件（生产镜像内置 web/dist；存在才启用，开发模式走 vite）
+const webDist = path.resolve(__dirname, "../../web/dist");
+try {
+  await app.register(fastifyStatic, { root: webDist, prefix: "/" });
+  // SPA 路由 fallback：非 /api、/ws、/llm 的 GET 一律回 index.html
+  app.setNotFoundHandler((req, reply) => {
+    if (req.method === "GET" && !req.url.startsWith("/api") && !req.url.startsWith("/ws") && !req.url.startsWith("/llm")) {
+      return reply.sendFile("index.html");
+    }
+    return reply.code(404).send({ error: "not found" });
+  });
+  app.log.info(`web 静态文件已挂载: ${webDist}`);
+} catch {
+  app.log.info("未找到 web/dist，跳过静态托管（开发模式）");
+}
+
 registerRest(app, gameService, { agentsRoot, sandbox });
 registerUploadRoute(app, { uploadsRoot: path.join(agentsRoot, "uploads") });
 registerWs(app, bus, {

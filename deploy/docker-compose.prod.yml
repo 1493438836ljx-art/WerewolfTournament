@@ -1,0 +1,39 @@
+# 离线/生产部署编排：镜像全部本地加载（offline bundle 或 ghcr 拉取），无需外网
+# 用法：docker compose -f deploy/docker-compose.prod.yml up -d
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: wt
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-wt_dev_password}
+      POSTGRES_DB: werewolf
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wt -d werewolf"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  server:
+    image: wt-server:latest
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://wt:${POSTGRES_PASSWORD:-wt_dev_password}@postgres:5432/werewolf
+      # agent 容器经 agent-net 访问宿主 LLM 代理
+      WT_SANDBOX: docker
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      # agent 沙箱：宿主 docker.sock + 运行时镜像与网络
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data/agents:/app/agents
+      - ./data/uploads:/app/agents/uploads
+      # 数据库迁移（首次启动执行）
+    command: sh -c "pnpm --filter @wt/server db:migrate || true; pnpm --filter @wt/server start"
+
+volumes:
+  pgdata:
